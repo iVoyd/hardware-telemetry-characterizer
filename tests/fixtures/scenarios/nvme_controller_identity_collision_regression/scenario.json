@@ -1,0 +1,11 @@
+{
+  "scenario": "nvme_controller_identity_collision_regression",
+  "synthetic": true,
+  "description": "Regression fixture: identical generic hwmon names must not overwrite values.",
+  "interval_s": 1.0,
+  "samples": [{"phase": "passive", "measurements": [
+    {"source": "hwmon", "device_id": "nvme:hwmon0", "channel": "temp1", "unit": "°C", "value": 31.0},
+    {"source": "hwmon", "device_id": "nvme:hwmon1", "channel": "temp1", "unit": "°C", "value": 41.0},
+    {"source": "hwmon", "device_id": "nvme:hwmon2", "channel": "temp1", "unit": "°C", "value": 51.0}
+  ]}]
+}

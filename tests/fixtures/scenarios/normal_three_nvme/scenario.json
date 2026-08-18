@@ -1,0 +1,18 @@
+{
+  "scenario": "normal_three_nvme",
+  "synthetic": true,
+  "description": "Synthetic three-controller observation with independent identities.",
+  "interval_s": 1.0,
+  "samples": [
+    {"phase": "passive", "timestamp": "2025-01-01T00:00:00Z", "measurements": [
+      {"source": "hwmon", "device_id": "nvme:hwmon0", "channel": "temp1", "unit": "°C", "value": 40.0},
+      {"source": "hwmon", "device_id": "nvme:hwmon1", "channel": "temp1", "unit": "°C", "value": 42.0},
+      {"source": "hwmon", "device_id": "nvme:hwmon2", "channel": "temp1", "unit": "°C", "value": 44.0}
+    ]},
+    {"phase": "passive", "timestamp": "2025-01-01T00:00:01Z", "measurements": [
+      {"source": "hwmon", "device_id": "nvme:hwmon0", "channel": "temp1", "unit": "°C", "value": 40.5},
+      {"source": "hwmon", "device_id": "nvme:hwmon1", "channel": "temp1", "unit": "°C", "value": 42.5},
+      {"source": "hwmon", "device_id": "nvme:hwmon2", "channel": "temp1", "unit": "°C", "value": 44.5}
+    ]}
+  ]
+}

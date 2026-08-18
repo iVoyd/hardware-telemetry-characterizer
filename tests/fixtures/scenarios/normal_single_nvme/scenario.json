@@ -1,0 +1,14 @@
+{
+  "scenario": "normal_single_nvme",
+  "synthetic": true,
+  "description": "Synthetic single-controller observation.",
+  "interval_s": 1.0,
+  "samples": [
+    {"phase": "passive", "timestamp": "2025-01-01T00:00:00Z", "measurements": [
+      {"source": "hwmon", "device_id": "nvme:hwmon0", "channel": "temp1", "unit": "°C", "value": 39.5}
+    ]},
+    {"phase": "passive", "timestamp": "2025-01-01T00:00:01Z", "measurements": [
+      {"source": "hwmon", "device_id": "nvme:hwmon0", "channel": "temp1", "unit": "°C", "value": 40.0}
+    ]}
+  ]
+}

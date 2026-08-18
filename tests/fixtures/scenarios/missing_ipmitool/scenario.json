@@ -1,0 +1,8 @@
+{
+  "scenario": "missing_ipmitool",
+  "synthetic": true,
+  "description": "Synthetic absence of optional IPMI tooling.",
+  "samples": [{"phase": "passive", "measurements": [
+    {"source": "ipmi", "device_id": "collector", "channel": "collector", "unit": "status", "quality": "UNAVAILABLE", "error": "command not found: ipmitool"}
+  ]}]
+}

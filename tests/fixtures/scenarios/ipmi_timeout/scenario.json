@@ -1,0 +1,8 @@
+{
+  "scenario": "ipmi_timeout",
+  "synthetic": true,
+  "description": "Synthetic bounded IPMI command timeout.",
+  "samples": [{"phase": "passive", "measurements": [
+    {"source": "ipmi", "device_id": "collector", "channel": "collector", "unit": "status", "quality": "TIMEOUT", "error": "command timed out"}
+  ]}]
+}

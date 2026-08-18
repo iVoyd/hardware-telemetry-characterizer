@@ -1,0 +1,48 @@
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.local.*
+*.pem
+*.key
+credentials/
+secrets/
+
+# Python tooling
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Local agent/editor metadata
+.serena/
+.idea/
+.vscode/
+
+# Runtime output and physical evidence
+results/
+hardware-results/
+captures/
+inventories/
+*.log
+*.csv
+*.jsonl
+!examples/synthetic/**/*.csv
+smart_before.txt
+smart_after.txt
+smart_*.txt
+ipmi_*.txt
+dmi_*.txt
+inventory_*.txt
+
+# Temporary deployment material
+.htc-deploy/

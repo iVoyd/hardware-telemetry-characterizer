@@ -1,0 +1,8 @@
+{
+  "scenario": "missing_smartctl",
+  "synthetic": true,
+  "description": "Synthetic absence of optional SMART tooling.",
+  "samples": [{"phase": "passive", "measurements": [
+    {"source": "smart", "device_id": "collector", "channel": "collector", "unit": "status", "quality": "UNAVAILABLE", "error": "command not found: smartctl"}
+  ]}]
+}

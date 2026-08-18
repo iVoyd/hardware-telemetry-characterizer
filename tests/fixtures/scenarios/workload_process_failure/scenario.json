@@ -1,0 +1,10 @@
+{
+  "scenario": "workload_process_failure",
+  "synthetic": true,
+  "description": "Synthetic unexpected worker exit retained as experiment evidence.",
+  "mode": "cpu",
+  "workload_error": "worker exited with status 17",
+  "samples": [{"phase": "baseline", "measurements": [
+    {"source": "system", "device_id": "system", "channel": "cpu_utilization", "unit": "%", "value": 12.0}
+  ]}]
+}

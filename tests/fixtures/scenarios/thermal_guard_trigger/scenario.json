@@ -1,0 +1,15 @@
+{
+  "scenario": "thermal_guard_trigger",
+  "synthetic": true,
+  "description": "Synthetic stimulus sample crossing a generic thermal guardrail.",
+  "mode": "cpu",
+  "guardrail_triggered": "thermal guard triggered: cpu:synthetic/temp >= 85 °C",
+  "samples": [
+    {"phase": "baseline", "timestamp": "2025-01-01T00:00:00Z", "measurements": [
+      {"source": "hwmon", "device_id": "cpu:synthetic", "channel": "temp", "unit": "°C", "value": 48.0}
+    ]},
+    {"phase": "stimulus", "timestamp": "2025-01-01T00:00:01Z", "measurements": [
+      {"source": "hwmon", "device_id": "cpu:synthetic", "channel": "temp", "unit": "°C", "value": 86.0}
+    ]}
+  ]
+}

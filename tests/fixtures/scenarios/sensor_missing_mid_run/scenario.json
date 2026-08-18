@@ -1,0 +1,14 @@
+{
+  "scenario": "sensor_missing_mid_run",
+  "synthetic": true,
+  "description": "Synthetic channel disappearance after a good sample.",
+  "interval_s": 1.0,
+  "samples": [
+    {"phase": "passive", "timestamp": "2025-01-01T00:00:00Z", "measurements": [
+      {"source": "hwmon", "device_id": "coretemp:hwmon0", "channel": "Package", "unit": "°C", "value": 51.0}
+    ]},
+    {"phase": "passive", "timestamp": "2025-01-01T00:00:01Z", "measurements": [
+      {"source": "hwmon", "device_id": "coretemp:hwmon0", "channel": "Package", "unit": "°C", "quality": "MISSING", "error": "channel was not present during this sample"}
+    ]}
+  ]
+}

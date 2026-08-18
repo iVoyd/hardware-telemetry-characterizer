@@ -1,0 +1,8 @@
+{
+  "scenario": "malformed_ipmi_output",
+  "synthetic": true,
+  "description": "Synthetic malformed IPMI row retained as parse evidence.",
+  "samples": [{"phase": "passive", "measurements": [
+    {"source": "ipmi", "device_id": "collector", "channel": "collector", "unit": "status", "quality": "PARSE_ERROR", "error": "no parseable IPMI sensor rows"}
+  ]}]
+}

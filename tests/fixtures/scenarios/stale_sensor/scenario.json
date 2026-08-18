@@ -1,0 +1,8 @@
+{
+  "scenario": "stale_sensor",
+  "synthetic": true,
+  "description": "Synthetic stale reading retained with explicit quality.",
+  "samples": [{"phase": "passive", "measurements": [
+    {"source": "hwmon", "device_id": "thermal:hwmon0", "channel": "temp1", "unit": "°C", "value": 48.0, "quality": "STALE", "error": "timestamp exceeded freshness policy"}
+  ]}]
+}

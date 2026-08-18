@@ -1,0 +1,8 @@
+{
+  "scenario": "collector_command_timeout",
+  "synthetic": true,
+  "description": "Synthetic external collector timeout retained as quality evidence.",
+  "samples": [{"phase": "passive", "measurements": [
+    {"source": "smart", "device_id": "collector", "channel": "collector", "unit": "status", "quality": "TIMEOUT", "error": "smartctl command timed out"}
+  ]}]
+}
