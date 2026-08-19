@@ -30,6 +30,7 @@ EXCLUDES = (
     "caches/",
 )
 _REMOTE_TEMP_PATH = re.compile(r"^[A-Za-z0-9_./-]+$")
+_REMOTE_RESULT_DIR = re.compile(r"^results/run-[A-Za-z0-9][A-Za-z0-9_.-]*$")
 _SAFE_HOST = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.:-]*$")
 _SAFE_USER = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]*$")
 _SAFE_PATH = re.compile(r"^/[A-Za-z0-9._/-]+$")
@@ -167,6 +168,33 @@ def _is_safe_remote_child(path: str, parent_dir: str) -> bool:
     return bool(relative.parts)
 
 
+def parse_remote_result_dir(stdout: str) -> str:
+    """Validate the one result directory emitted by the remote CLI."""
+
+    lines = [line.strip() for line in stdout.splitlines() if line.strip()]
+    if len(lines) != 1 or _REMOTE_RESULT_DIR.fullmatch(lines[0]) is None:
+        raise RuntimeError(
+            "remote characterization did not emit exactly one safe results/run-* directory"
+        )
+    return lines[0]
+
+
+def remote_result_path(remote_dir: str, result_dir: str) -> str:
+    """Resolve a validated relative result directory inside one deployment."""
+
+    if _REMOTE_RESULT_DIR.fullmatch(result_dir) is None:
+        raise RuntimeError("remote characterization emitted an unsafe result directory")
+    deployment = PurePosixPath(remote_dir)
+    candidate = deployment / PurePosixPath(result_dir)
+    try:
+        relative = candidate.relative_to(deployment)
+    except ValueError as exc:
+        raise RuntimeError("remote result directory escaped the temporary deployment") from exc
+    if not relative.parts:
+        raise RuntimeError("remote result directory was empty")
+    return str(candidate)
+
+
 def create_remote_temp_dir(config: RemoteConfig) -> str:
     """Create and validate one temporary remote child directory."""
 
@@ -283,8 +311,26 @@ def run(
         remote_script = (
             f"cd {shlex.quote(temp_result)} && exec env PYTHONPATH=src {shlex.join(characterize)}"
         )
-        subprocess.run(remote_command(config, ["sh", "-c", remote_script]), check=True)
-        _retrieve(config, temp_result, local_results)
+        characterize_result = subprocess.run(
+            remote_command(config, ["sh", "-c", remote_script]),
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if characterize_result.stdout:
+            print(characterize_result.stdout, end="")
+        if characterize_result.stderr:
+            print(characterize_result.stderr, end="", file=sys.stderr)
+        if characterize_result.returncode:
+            raise subprocess.CalledProcessError(
+                characterize_result.returncode,
+                characterize_result.args,
+                output=characterize_result.stdout,
+                stderr=characterize_result.stderr,
+            )
+        result_dir = parse_remote_result_dir(characterize_result.stdout)
+        result_path = remote_result_path(temp_result, result_dir)
+        _retrieve(config, result_path, local_results)
     finally:
         subprocess.run(remote_command(config, ["rm", "-rf", "--", temp_result]), check=False)
     return local_results
@@ -324,15 +370,20 @@ def _deploy(repository: Path, config: RemoteConfig, remote_dir: str) -> None:
         archive_path.unlink(missing_ok=True)
 
 
-def _retrieve(config: RemoteConfig, remote_dir: str, local_dir: Path) -> None:
-    source = f"{config.target}:{remote_dir}/results/"
+def _retrieve(config: RemoteConfig, remote_result: str, local_dir: Path) -> None:
+    """Retrieve only one validated run directory into the local result path."""
+
+    source = f"{config.target}:{remote_result}/"
     if shutil.which("rsync"):
         subprocess.run(
             ["rsync", "-az", "-e", rsync_ssh_transport(config), source, f"{local_dir}/"],
             check=True,
         )
     else:
-        subprocess.run([*scp_base(config), "-r", source, f"{local_dir}/"], check=True)
+        subprocess.run(
+            [*scp_base(config), "-r", f"{config.target}:{remote_result}/.", f"{local_dir}/"],
+            check=True,
+        )
 
 
 def scp_base(config: RemoteConfig) -> list[str]:

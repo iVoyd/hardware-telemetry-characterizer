@@ -69,7 +69,9 @@ def test_rsync_transport_honors_default_and_custom_ssh_settings(monkeypatch) -> 
     monkeypatch.setattr(helper.shutil, "which", lambda _name: "/usr/bin/rsync")
     monkeypatch.setattr(helper.subprocess, "run", lambda command, check: calls.append(command))
     helper._deploy(Path("/tmp/source"), custom, "/tmp/htc-run")
-    helper._retrieve(custom, "/tmp/htc-run", Path("/tmp/results"))
+    helper._retrieve(
+        custom, "/tmp/htc-run/results/run-20260819T123456.000000Z", Path("/tmp/results")
+    )
     assert calls[0][0:4] == ["rsync", "-az", "-e", expected_transport]
     assert calls[1][0:4] == ["rsync", "-az", "-e", expected_transport]
 
@@ -139,6 +141,80 @@ def test_remote_mktemp_result_must_be_a_real_child(monkeypatch) -> None:
     )
     with pytest.raises(RuntimeError, match="safe child"):
         helper.create_remote_temp_dir(config)
+
+
+def test_remote_result_output_is_exactly_one_safe_run_directory() -> None:
+    helper = load_helper()
+
+    result_dir = helper.parse_remote_result_dir("results/run-20260819T123456.000000Z\n")
+    assert result_dir == "results/run-20260819T123456.000000Z"
+    assert helper.remote_result_path("/tmp/htc-run.abc123", result_dir) == (
+        "/tmp/htc-run.abc123/results/run-20260819T123456.000000Z"
+    )
+
+    for output in (
+        "",
+        "/tmp/htc-run.abc123/results/run-20260819T123456.000000Z\n",
+        "results/other/run-20260819T123456.000000Z\n",
+        "results/run-../outside\n",
+        "results/run-good\nresults/run-other\n",
+        "results/run-good;touch-bad\n",
+    ):
+        with pytest.raises(RuntimeError, match="safe|exactly one|unsafe"):
+            helper.parse_remote_result_dir(output)
+
+
+def test_retrieve_targets_only_the_emitted_run_directory(monkeypatch, tmp_path: Path) -> None:
+    helper = load_helper()
+    config = helper.RemoteConfig("example.invalid", "operator", "/tmp/htc-deploy")
+    calls: list[list[str]] = []
+
+    monkeypatch.setattr(helper.shutil, "which", lambda _name: "/usr/bin/rsync")
+    monkeypatch.setattr(helper.subprocess, "run", lambda command, check: calls.append(command))
+
+    result_dir = helper.remote_result_path(
+        "/tmp/htc-run.abc123", "results/run-20260819T123456.000000Z"
+    )
+    helper._retrieve(config, result_dir, tmp_path)
+
+    assert calls == [
+        [
+            "rsync",
+            "-az",
+            "-e",
+            "ssh -p 22",
+            "operator@example.invalid:/tmp/htc-run.abc123/results/run-20260819T123456.000000Z/",
+            f"{tmp_path}/",
+        ]
+    ]
+
+
+def test_retrieve_fallback_copies_run_contents_without_nested_directory(
+    monkeypatch, tmp_path: Path
+) -> None:
+    helper = load_helper()
+    config = helper.RemoteConfig(
+        "example.invalid", "operator", "/tmp/htc-deploy", ssh_key="/tmp/key"
+    )
+    calls: list[list[str]] = []
+
+    monkeypatch.setattr(helper.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(helper.subprocess, "run", lambda command, check: calls.append(command))
+
+    helper._retrieve(config, "/tmp/htc-run.abc123/results/run-20260819T123456.000000Z", tmp_path)
+
+    assert calls == [
+        [
+            "scp",
+            "-P",
+            "22",
+            "-i",
+            "/tmp/key",
+            "-r",
+            "operator@example.invalid:/tmp/htc-run.abc123/results/run-20260819T123456.000000Z/.",
+            f"{tmp_path}/",
+        ]
+    ]
 
 
 def test_remote_characterize_arguments_are_mode_specific() -> None:

@@ -80,11 +80,10 @@ class SystemCollector:
     def _loadavg(self, timestamp: datetime) -> list[Measurement]:
         try:
             values = self.filesystem.read_text("/proc/loadavg").split()[:3]
+            channels = ("load_1m", "load_5m", "load_15m")
             return [
-                Measurement(
-                    timestamp, self.name, "system", f"load_{index + 1}m", "load", float(value)
-                )
-                for index, value in enumerate(values)
+                Measurement(timestamp, self.name, "system", channel, "load", float(value))
+                for channel, value in zip(channels, values, strict=False)
             ]
         except (OSError, ValueError) as exc:
             return [

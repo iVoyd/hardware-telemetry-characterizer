@@ -82,7 +82,7 @@ def test_system_collector_calculates_cpu_delta_and_degrades_cpufreq() -> None:
     fs = FakeFilesystem(
         {
             "/proc/stat": "cpu  100 0 100 800 0 0 0 0\ncpu0 50 0 50 400 0 0 0 0\n",
-            "/proc/loadavg": "0.25 0.50 0.75 1/10 1234\n",
+            "/proc/loadavg": "0.10 0.50 1.50 1/100 1234\n",
             "/proc/meminfo": "MemAvailable:       2048 kB\n",
         }
     )
@@ -97,6 +97,8 @@ def test_system_collector_calculates_cpu_delta_and_degrades_cpufreq() -> None:
     utilization = next(item for item in second if item.channel == "cpu_utilization")
     assert utilization.quality == Quality.GOOD
     assert utilization.value == 66.66666666666667
+    loads = {item.channel: item.value for item in second if item.channel.startswith("load_")}
+    assert loads == {"load_1m": 0.10, "load_5m": 0.50, "load_15m": 1.50}
     assert (
         next(item for item in second if item.channel == "frequency").quality == Quality.UNAVAILABLE
     )
