@@ -261,6 +261,11 @@ def scp_base(config: RemoteConfig) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--check-config",
+        action="store_true",
+        help="validate environment configuration without contacting a remote host",
+    )
     parser.add_argument("--mode", choices=("passive", "cpu"), default="passive")
     parser.add_argument(
         "--duration", type=float, default=10.0, help="passive duration; ignored in CPU mode"
@@ -273,6 +278,8 @@ def main() -> int:
     parser.add_argument("--workers", type=int)
     args = parser.parse_args()
     config = config_from_environment()
+    if args.check_config:
+        return 0
     print(
         run(
             config,

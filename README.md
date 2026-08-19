@@ -111,14 +111,33 @@ documented in [`docs/validation.md`](docs/validation.md).
 
 ## Remote DUT concept
 
-Development, Git, and credentials remain on the development WSL machine. The
-optional helper reads `HTC_DUT_HOST`, `HTC_DUT_USER`, `HTC_DUT_DIR`,
-`HTC_DUT_PORT`, and optionally `HTC_DUT_SSH_KEY` from the environment. It uses
-the same SSH transport for rsync, ssh, and scp, deploys to a temporary remote
-directory, runs a read-only or explicitly bounded command, and retrieves
-results to local ignored `hardware-results/`. Passive `--duration` and CPU
-`--baseline`/`--stimulus-duration`/`--recovery` arguments are kept distinct.
-See [`scripts/remote/deploy_and_run.py`](scripts/remote/deploy_and_run.py) and
+Development, Git, and credentials remain on the development WSL machine.
+Configure one local `.env`
+interactively, then use the wrappers around the same tested Python deployment
+helper:
+
+```bash
+# One-time local setup and read-only DUT prerequisite check.
+./scripts/remote/setup_dut.sh
+
+# Routine passive validation: 30 seconds at a 2-second interval.
+./scripts/remote/validate_dut.sh
+
+# Later, controlled CPU characterization requires an interactive confirmation.
+./scripts/remote/validate_dut.sh --cpu
+```
+
+The setup script reads no physical evidence and makes no persistent DUT
+changes. The validation wrapper reads `HTC_DUT_HOST`, `HTC_DUT_USER`,
+`HTC_DUT_DIR`, `HTC_DUT_PORT`, and optionally `HTC_DUT_SSH_KEY` from the local
+`.env`, uses the same SSH transport for rsync, ssh, and scp, deploys to a
+temporary remote directory, and retrieves results to ignored local
+`hardware-results/`. Passive `--duration` and CPU
+`--baseline`/`--stimulus-duration`/`--recovery` arguments remain distinct. CPU
+mode always passes `--enable-stimulus` only after the operator types `CPU` at
+the confirmation prompt. See [`scripts/remote/deploy_and_run.py`](scripts/remote/deploy_and_run.py),
+[`scripts/remote/setup_dut.sh`](scripts/remote/setup_dut.sh),
+[`scripts/remote/validate_dut.sh`](scripts/remote/validate_dut.sh), and
 [`.env.example`](.env.example). Never commit real connection values.
 
 ## Current limitations

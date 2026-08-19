@@ -34,8 +34,12 @@ Physical / Synthetic Sources
 - `replay.py` turns explicitly synthetic scenario JSON into the same artifact
   shape as an actual run.
 - `scripts/remote/` contains environment-driven deployment orchestration with
-  one configured SSH transport shared by ssh, rsync, and scp. It is
-  intentionally not invoked by local tests or CI.
+  one configured SSH transport shared by ssh, rsync, and scp. `setup_dut.sh`
+  performs only a read-only prerequisite check; `validate_dut.sh` defaults to
+  passive observation, requires explicit interactive confirmation for CPU
+  stimulus, validates retrieved artifacts, and optionally packages one run.
+  These scripts are intentionally not invoked against a DUT by local tests or
+  CI.
 
 The source of truth is the code and tests. Documentation explains boundaries,
 not unverified hardware behavior.
