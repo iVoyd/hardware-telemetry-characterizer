@@ -151,8 +151,8 @@ set -a
 # shellcheck disable=SC1090
 source "$env_file"
 set +a
-command -v python3 >/dev/null 2>&1 || die "python3 is required on this WSL machine"
-command -v ssh >/dev/null 2>&1 || die "ssh is required on this WSL machine"
+command -v python3 >/dev/null 2>&1 || die "python3 is required on this development machine"
+command -v ssh >/dev/null 2>&1 || die "ssh is required on this development machine"
 if ! python3 "$repo_root/scripts/remote/deploy_and_run.py" --check-config >/dev/null; then
     die ".env failed deploy_and_run.py validation"
 fi

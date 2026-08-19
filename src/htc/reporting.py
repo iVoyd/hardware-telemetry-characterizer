@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import json
 from dataclasses import asdict
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +17,7 @@ def write_result(result: ExperimentResult, base_dir: str | Path = "results") -> 
     """Write one timestamped run directory and return its path."""
 
     base = Path(base_dir)
-    run_name = "run-" + datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
+    run_name = "run-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
     run_dir = base / run_name
     run_dir.mkdir(parents=True, exist_ok=False)
     summary = summarize(result)

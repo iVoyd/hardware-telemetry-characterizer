@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -38,7 +38,7 @@ def load_scenario(name_or_path: str | Path) -> dict[str, Any]:
 
 def replay_scenario(name_or_path: str | Path, base_dir: str | Path = "results") -> Path:
     data = load_scenario(name_or_path)
-    default_time = datetime(2025, 1, 1, tzinfo=UTC)
+    default_time = datetime(2025, 1, 1, tzinfo=timezone.utc)
     samples: list[Sample] = []
     for sequence, record in enumerate(data.get("samples", [])):
         timestamp = _parse_time(record.get("timestamp"), default_time + timedelta(seconds=sequence))
@@ -94,4 +94,4 @@ def _parse_time(value: str | None, default: datetime) -> datetime:
     if not value:
         return default
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)

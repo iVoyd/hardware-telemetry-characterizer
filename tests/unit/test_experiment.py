@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -19,7 +19,7 @@ from htc.measurement import Measurement
 class FakeClock:
     def __init__(self) -> None:
         self.value = 0.0
-        self.wall_start = datetime(2025, 1, 1, tzinfo=UTC)
+        self.wall_start = datetime(2025, 1, 1, tzinfo=timezone.utc)
 
     def monotonic(self) -> float:
         return self.value
@@ -45,7 +45,7 @@ class TemperatureCollector:
         self.sample_index += 1
         return [
             Measurement(
-                timestamp or datetime.now(UTC),
+                timestamp or datetime.now(timezone.utc),
                 "hwmon",
                 "cpu:synthetic",
                 "temp",

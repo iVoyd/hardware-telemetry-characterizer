@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
-from enum import StrEnum
+from datetime import datetime, timezone
+from enum import Enum
 from typing import Any, TypeAlias
 
 
-class Quality(StrEnum):
+class Quality(str, Enum):
     """Acquisition quality, distinct from a DUT rule or characterization result."""
 
     GOOD = "GOOD"
@@ -27,13 +27,13 @@ MeasurementValue: TypeAlias = float | int | str | None
 def utc_now() -> datetime:
     """Return an aware UTC timestamp."""
 
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 
 def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 @dataclass(frozen=True, slots=True)

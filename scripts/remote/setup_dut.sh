@@ -45,8 +45,8 @@ fi
 if git -C "$repo_root" ls-files --error-unmatch -- .env >/dev/null 2>&1; then
     die ".env is tracked; refusing to write connection configuration"
 fi
-command -v python3 >/dev/null 2>&1 || die "python3 is required on this WSL machine"
-command -v ssh >/dev/null 2>&1 || die "ssh is required on this WSL machine"
+command -v python3 >/dev/null 2>&1 || die "python3 is required on this development machine"
+command -v ssh >/dev/null 2>&1 || die "ssh is required on this development machine"
 
 read -r -p "HTC_DUT_HOST: " dut_host || die "input ended before HTC_DUT_HOST was provided"
 [[ -n "$dut_host" ]] || die "HTC_DUT_HOST must not be empty"
@@ -111,14 +111,27 @@ printf '\nRead-only DUT prerequisites:\n'
 prerequisites=$(ssh "${ssh_options[@]}" "$target" '
 printf "whoami: "; whoami
 printf "uname: "; uname -srm
-printf "python3: "; python3 --version 2>&1
+if ! command -v python3 >/dev/null 2>&1; then
+    printf "python3_version: unavailable\n"
+    exit 1
+fi
+printf "python3_version: "; python3 --version 2>&1
 printf "python3 path: "; command -v python3 || true
 if command -v ipmitool >/dev/null 2>&1; then printf "ipmitool: available\n"; else printf "ipmitool: unavailable (IPMI collector will report unavailable)\n"; fi
 if command -v smartctl >/dev/null 2>&1; then printf "smartctl: available\n"; else printf "smartctl: unavailable (SMART collector will report unavailable)\n"; fi
 if test -r /sys/class/hwmon; then printf "hwmon: readable\n"; else printf "hwmon: not readable\n"; fi
 if test -r /proc/stat; then printf "proc-stat: readable\n"; else printf "proc-stat: not readable\n"; fi
 ') || die "SSH connectivity or read-only prerequisite check failed"
-printf '%s\n' "$prerequisites"
+python_version=$(printf '%s\n' "$prerequisites" | sed -n 's/^python3_version: //p')
+[[ -n "$python_version" ]] || die "remote python3 version was not reported"
+if ! python_status=$(python3 "$repo_root/scripts/remote/deploy_and_run.py" \
+    --check-python-version "$python_version" 2>&1); then
+    printf '%s\n' "$prerequisites" | sed '/^python3_version:/d'
+    printf 'python3: %s\n' "$python_status" >&2
+    die "remote Python version is unsupported; no source or characterization was run"
+fi
+printf '%s\n' "$prerequisites" | sed '/^python3_version:/d'
+printf 'python3: %s\n' "$python_status"
 
 if ! git -C "$repo_root" check-ignore -q .env; then
     die ".env is no longer ignored"

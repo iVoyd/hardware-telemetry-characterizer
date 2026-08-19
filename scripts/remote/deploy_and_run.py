@@ -14,9 +14,10 @@ import re
 import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
 EXCLUDES = (
@@ -32,6 +33,11 @@ _REMOTE_TEMP_PATH = re.compile(r"^[A-Za-z0-9_./-]+$")
 _SAFE_HOST = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.:-]*$")
 _SAFE_USER = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]*$")
 _SAFE_PATH = re.compile(r"^/[A-Za-z0-9._/-]+$")
+_PYTHON_VERSION = re.compile(
+    r"^\s*(?:Python\s+)?(?P<major>\d+)\.(?P<minor>\d+)"
+    r"(?:\.(?P<micro>\d+))?(?:\s|$)"
+)
+_MINIMUM_PYTHON = (3, 10)
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +83,29 @@ def config_from_environment(environ: dict[str, str] | None = None) -> RemoteConf
         port=port,
         ssh_key=values.get("HTC_DUT_SSH_KEY") or None,
     )
+
+
+def parse_python_version(version_text: str) -> tuple[int, int, int]:
+    """Parse ``python3 --version`` output into a comparable version tuple."""
+
+    match = _PYTHON_VERSION.match(version_text)
+    if match is None:
+        raise ValueError("could not parse Python version output")
+    return (
+        int(match.group("major")),
+        int(match.group("minor")),
+        int(match.group("micro") or 0),
+    )
+
+
+def python_version_status(version_text: str) -> tuple[bool, str]:
+    """Return support status and a concise operator-facing message."""
+
+    version = parse_python_version(version_text)
+    label = ".".join(str(part) for part in version)
+    if version[:2] < _MINIMUM_PYTHON:
+        return False, f"Python {label} (unsupported; HTC requires Python >=3.10)"
+    return True, f"Python {label} (supported)"
 
 
 def _safe_remote_path(value: str) -> bool:
@@ -233,7 +262,7 @@ def run(
 
     repository = Path(__file__).resolve().parents[2]
     local_results = (
-        repository / "hardware-results" / datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
+        repository / "hardware-results" / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
     )
     local_results.mkdir(parents=True, exist_ok=False)
     subprocess.run(remote_command(config, ["mkdir", "-p", config.parent_dir]), check=True)
@@ -315,10 +344,16 @@ def scp_base(config: RemoteConfig) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
+    checks = parser.add_mutually_exclusive_group()
+    checks.add_argument(
         "--check-config",
         action="store_true",
         help="validate environment configuration without contacting a remote host",
+    )
+    checks.add_argument(
+        "--check-python-version",
+        metavar="VERSION",
+        help="check a python3 --version string without contacting a remote host",
     )
     parser.add_argument("--mode", choices=("passive", "cpu"), default="passive")
     parser.add_argument(
@@ -331,6 +366,14 @@ def main() -> int:
     parser.add_argument("--max-temperature", type=float, default=85.0)
     parser.add_argument("--workers", type=int)
     args = parser.parse_args()
+    if args.check_python_version is not None:
+        try:
+            supported, message = python_version_status(args.check_python_version)
+        except ValueError as exc:
+            print(f"remote Python version check failed: {exc}", file=sys.stderr)
+            return 2
+        print(message)
+        return 0 if supported else 1
     config = config_from_environment()
     if args.check_config:
         return 0

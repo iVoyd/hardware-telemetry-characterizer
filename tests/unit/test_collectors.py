@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 import pytest
 
@@ -13,7 +13,7 @@ from htc.collectors.smart import SmartCollector, parse_smart_numeric
 from htc.collectors.system import SystemCollector
 from htc.measurement import Quality
 
-NOW = datetime(2025, 1, 1, tzinfo=UTC)
+NOW = datetime(2025, 1, 1, tzinfo=timezone.utc)
 
 
 def test_hwmon_preserves_instances_with_identical_driver_names() -> None:

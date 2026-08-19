@@ -31,6 +31,32 @@ def test_remote_configuration_is_environment_driven() -> None:
     assert config.port == 2222
 
 
+@pytest.mark.parametrize("version_text", ["Python 3.10.12", "Python 3.11.2", "3.12.1"])
+def test_python_version_preflight_accepts_supported_versions(version_text: str) -> None:
+    helper = load_helper()
+
+    supported, message = helper.python_version_status(version_text)
+
+    assert supported is True
+    assert message.endswith("(supported)")
+
+
+def test_python_version_preflight_rejects_python_39() -> None:
+    helper = load_helper()
+
+    supported, message = helper.python_version_status("Python 3.9.18")
+
+    assert supported is False
+    assert message == "Python 3.9.18 (unsupported; HTC requires Python >=3.10)"
+
+
+def test_python_version_preflight_rejects_malformed_output() -> None:
+    helper = load_helper()
+
+    with pytest.raises(ValueError, match="could not parse"):
+        helper.parse_python_version("not a Python version")
+
+
 def test_rsync_transport_honors_default_and_custom_ssh_settings(monkeypatch) -> None:
     helper = load_helper()
     default = helper.RemoteConfig("example.invalid", "operator", "/tmp/htc")

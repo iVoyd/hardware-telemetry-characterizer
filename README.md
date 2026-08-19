@@ -41,6 +41,12 @@ generic safety guardrails, and delegates statistics/reporting. See
 [`docs/architecture.md`](docs/architecture.md) and
 [`docs/measurement-model.md`](docs/measurement-model.md).
 
+## Python support
+
+HTC supports Python `>=3.10`. This includes the stock Python available on
+common Linux distributions such as Ubuntu 22.04, without requiring a custom
+Python installation on a DUT.
+
 ## Quick start
 
 ```bash
@@ -111,7 +117,7 @@ documented in [`docs/validation.md`](docs/validation.md).
 
 ## Remote DUT concept
 
-Development, Git, and credentials remain on the development WSL machine.
+Development, Git, and credentials remain on the development machine.
 Configure one local `.env`
 interactively, then use the wrappers around the same tested Python deployment
 helper:

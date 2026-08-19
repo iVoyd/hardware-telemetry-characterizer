@@ -3,6 +3,10 @@
 The project is designed to validate both the characterization logic and the
 measurement system that supplies it.
 
+The supported runtime is Python `>=3.10`. CI executes the synthetic suite on
+Python 3.10, 3.11, and 3.12 so the minimum supported interpreter is exercised
+rather than inferred from linting alone.
+
 ## Unit tests
 
 Unit tests inject filesystem and command adapters to exercise scaling, parsing,
