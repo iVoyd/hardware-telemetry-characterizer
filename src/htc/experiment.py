@@ -17,6 +17,8 @@ from typing import Protocol
 from .collectors.base import Collector, collector_status
 from .measurement import Measurement, Quality, utc_now
 
+_SYSTEM_CPU_UTILIZATION = ("system", "system", "cpu_utilization")
+
 
 class ExperimentInterrupted(KeyboardInterrupt):
     """Raised by CLI signal handlers so experiment cleanup can run."""
@@ -375,7 +377,8 @@ class ExperimentEngine:
             return measurements
         tagged: list[Measurement] = []
         for measurement in measurements:
-            if measurement.channel != "cpu_utilization":
+            channel_identity = (measurement.source, measurement.device_id, measurement.channel)
+            if channel_identity != _SYSTEM_CPU_UTILIZATION:
                 tagged.append(measurement)
                 continue
             metadata = {

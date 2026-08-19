@@ -58,15 +58,23 @@ class TemperatureCollector:
 class UtilizationCollector:
     name = "synthetic-system"
 
-    def __init__(self, values: list[float]) -> None:
+    def __init__(
+        self,
+        values: list[float],
+        *,
+        source: str = "system",
+        device_id: str = "system",
+    ) -> None:
         self.values = iter(values)
+        self.source = source
+        self.device_id = device_id
 
     def collect(self, timestamp: datetime | None = None) -> list[Measurement]:
         return [
             Measurement(
                 timestamp or datetime.now(timezone.utc),
-                "system",
-                "system",
+                self.source,
+                self.device_id,
                 "cpu_utilization",
                 "%",
                 next(self.values),
@@ -319,6 +327,21 @@ def test_passive_mode_does_not_add_phase_boundary_metadata() -> None:
         [UtilizationCollector([1.0, 2.0])],
         ExperimentConfig(mode="passive", interval_s=1.0, duration_s=1.0),
         sampler=sampler(clock),
+    ).run()
+    assert all(
+        "phase_boundary_interval" not in measurement.metadata
+        for sample in result.samples
+        for measurement in sample.measurements
+    )
+
+
+def test_unrelated_cpu_utilization_channel_is_not_tagged() -> None:
+    clock = FakeClock()
+    result = ExperimentEngine(
+        [UtilizationCollector([1.0, 25.0, 26.0, 1.0], source="synthetic", device_id="device")],
+        ExperimentConfig(mode="cpu", interval_s=1.0, baseline_s=0, stimulus_s=1.0, recovery_s=1.0),
+        sampler=sampler(clock),
+        workload_factory=FakeWorkload,
     ).run()
     assert all(
         "phase_boundary_interval" not in measurement.metadata

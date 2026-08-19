@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -9,12 +9,15 @@ description = "Generic Linux hardware telemetry and characterization framework"
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{name = "iVoyd"}]
+license = "MIT"
+license-files = ["LICENSE"]
 dependencies = []
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
     "ruff>=0.6",
+    "build>=1.2",
 ]
 
 [project.scripts]

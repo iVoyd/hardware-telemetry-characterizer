@@ -173,5 +173,8 @@ credential, serial, MAC, IP, raw inventory, or real DUT evidence, omit it.
 Keep characterization guardrails conceptually separate from production
 acceptance criteria. Before a public release, follow
 [`docs/PUBLIC_RELEASE_CHECKLIST.md`](docs/PUBLIC_RELEASE_CHECKLIST.md), inspect
-the complete history, and make only evidence-supported claims. A license has
-not yet been selected and is intentionally not included.
+the complete history, and make only evidence-supported claims.
+
+## License
+
+This project is available under the MIT License. See [`LICENSE`](LICENSE).
