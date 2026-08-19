@@ -3,28 +3,43 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from statistics import fmean, pstdev
 
 from .experiment import ExperimentResult, Sample
-from .measurement import Quality
+from .measurement import Measurement, Quality
+
+
+def _is_phase_boundary_interval(measurement: Measurement) -> bool:
+    return measurement.metadata.get("phase_boundary_interval") is True
+
+
+def _numeric_measurements(
+    samples: Iterable[Sample], *, include_boundaries: bool
+) -> Iterator[tuple[Sample, Measurement]]:
+    for sample in samples:
+        for measurement in sample.measurements:
+            if (
+                measurement.quality == Quality.GOOD
+                and measurement.is_numeric
+                and (include_boundaries or not _is_phase_boundary_interval(measurement))
+            ):
+                yield sample, measurement
 
 
 def _numeric_by_channel(
     samples: Iterable[Sample],
 ) -> dict[tuple[str, str, str, str, str], list[float]]:
     grouped: dict[tuple[str, str, str, str, str], list[float]] = defaultdict(list)
-    for sample in samples:
-        for measurement in sample.measurements:
-            if measurement.quality == Quality.GOOD and measurement.is_numeric:
-                key = (
-                    sample.phase,
-                    measurement.source,
-                    measurement.device_id,
-                    measurement.channel,
-                    measurement.unit,
-                )
-                grouped[key].append(float(measurement.value))
+    for sample, measurement in _numeric_measurements(samples, include_boundaries=False):
+        key = (
+            sample.phase,
+            measurement.source,
+            measurement.device_id,
+            measurement.channel,
+            measurement.unit,
+        )
+        grouped[key].append(float(measurement.value))
     return grouped
 
 
@@ -127,13 +142,25 @@ def derived_metrics(samples: Iterable[Sample]) -> list[dict[str, object]]:
 
 def summarize(result: ExperimentResult) -> dict[str, object]:
     channels = channel_statistics(result.samples)
+    numeric_observation_count = sum(
+        1
+        for _sample, _measurement in _numeric_measurements(result.samples, include_boundaries=True)
+    )
+    phase_boundary_interval_count = sum(
+        1
+        for sample in result.samples
+        for measurement in sample.measurements
+        if _is_phase_boundary_interval(measurement)
+    )
     return {
         "mode": result.config.mode,
         "guardrail_triggered": result.guardrail_triggered,
         "workload_error": result.workload_error,
         "interrupted": result.interrupted,
         "sample_frame_count": len(result.samples),
-        "numeric_observation_count": sum(row["sample_count"] for row in channels),
+        "numeric_observation_count": numeric_observation_count,
+        "phase_statistic_observation_count": sum(row["sample_count"] for row in channels),
+        "phase_boundary_interval_count": phase_boundary_interval_count,
         "timing": timing_statistics(result.samples, result.config.interval_s),
         "channels": channels,
         "derived": derived_metrics(result.samples),

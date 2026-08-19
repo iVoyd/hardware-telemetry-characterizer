@@ -10,7 +10,7 @@ import sys
 import threading
 import time
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import Protocol
 
@@ -277,6 +277,7 @@ class ExperimentEngine:
                 samples.extend(self._phase("passive", self.config.duration_s, len(samples)))
             else:
                 samples.extend(self._phase("baseline", self.config.baseline_s, len(samples)))
+                recovery_previous_phase = "baseline"
                 if self._guardrail_triggered is None:
                     try:
                         workload = self.workload_factory(self.config.workers)
@@ -287,6 +288,7 @@ class ExperimentEngine:
                             if self._stop_workload(workload):
                                 workload = None
                 if workload and not self._workload_error:
+                    recovery_previous_phase = "stimulus"
                     try:
                         samples.extend(
                             self._phase(
@@ -294,12 +296,20 @@ class ExperimentEngine:
                                 self.config.stimulus_s,
                                 len(samples),
                                 stop_requested=lambda: self._workload_stopped(workload),
+                                previous_phase="baseline",
                             )
                         )
                     finally:
                         self._stop_workload(workload)
                 if workload is None or self._workload_shutdown_complete:
-                    samples.extend(self._phase("recovery", self.config.recovery_s, len(samples)))
+                    samples.extend(
+                        self._phase(
+                            "recovery",
+                            self.config.recovery_s,
+                            len(samples),
+                            previous_phase=recovery_previous_phase,
+                        )
+                    )
         except (KeyboardInterrupt, ExperimentInterrupted):
             interrupted = True
         finally:
@@ -332,14 +342,50 @@ class ExperimentEngine:
         sequence_start: int,
         *,
         stop_requested: Callable[[], bool] | None = None,
+        previous_phase: str | None = None,
     ) -> list[Sample]:
+        first_collection = True
+
+        def collect(timestamp: datetime) -> list[Measurement]:
+            nonlocal first_collection
+            measurements = self._collect(timestamp)
+            if first_collection:
+                first_collection = False
+                measurements = self._mark_phase_boundary(
+                    measurements, previous_phase=previous_phase, current_phase=name
+                )
+            return measurements
+
         return self.sampler.collect_phase(
             name,
             duration_s,
-            self._collect,
+            collect,
             sequence_start=sequence_start,
             stop_requested=stop_requested or self._guardrail_stop,
         )
+
+    @staticmethod
+    def _mark_phase_boundary(
+        measurements: list[Measurement],
+        *,
+        previous_phase: str | None,
+        current_phase: str,
+    ) -> list[Measurement]:
+        if previous_phase is None:
+            return measurements
+        tagged: list[Measurement] = []
+        for measurement in measurements:
+            if measurement.channel != "cpu_utilization":
+                tagged.append(measurement)
+                continue
+            metadata = {
+                **measurement.metadata,
+                "phase_boundary_interval": True,
+                "previous_phase": previous_phase,
+                "current_phase": current_phase,
+            }
+            tagged.append(replace(measurement, metadata=metadata))
+        return tagged
 
     def _collect(self, timestamp: datetime) -> list[Measurement]:
         measurements: list[Measurement] = []

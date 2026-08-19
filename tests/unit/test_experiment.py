@@ -13,7 +13,7 @@ from htc.experiment import (
     ScheduledSampler,
     default_worker_count,
 )
-from htc.measurement import Measurement
+from htc.measurement import Measurement, Quality
 
 
 class FakeClock:
@@ -50,6 +50,25 @@ class TemperatureCollector:
                 "cpu:synthetic",
                 "temp",
                 "°C",
+                next(self.values),
+            )
+        ]
+
+
+class UtilizationCollector:
+    name = "synthetic-system"
+
+    def __init__(self, values: list[float]) -> None:
+        self.values = iter(values)
+
+    def collect(self, timestamp: datetime | None = None) -> list[Measurement]:
+        return [
+            Measurement(
+                timestamp or datetime.now(timezone.utc),
+                "system",
+                "system",
+                "cpu_utilization",
+                "%",
                 next(self.values),
             )
         ]
@@ -231,6 +250,81 @@ def test_workload_stop_failure_blocks_recovery_and_retries_cleanup() -> None:
     assert result.workload_error == "workload stop failed: synthetic shutdown failure"
     assert [sample.phase for sample in result.samples] == ["baseline", "stimulus", "stimulus"]
     assert workload.stopped is False
+
+
+def test_phase_boundary_metadata_preserves_interval_value_and_quality() -> None:
+    clock = FakeClock()
+    workload = FakeWorkload()
+    result = ExperimentEngine(
+        [UtilizationCollector([1.0, 25.0, 26.0, 26.0, 1.0])],
+        ExperimentConfig(mode="cpu", interval_s=1.0, baseline_s=0, stimulus_s=1.0, recovery_s=1.0),
+        sampler=sampler(clock),
+        workload_factory=lambda _workers: workload,
+    ).run()
+    stimulus_boundary = next(
+        measurement
+        for sample in result.samples
+        if sample.phase == "stimulus"
+        for measurement in sample.measurements
+        if measurement.channel == "cpu_utilization" and measurement.value == 25.0
+    )
+    recovery_boundary = next(
+        measurement
+        for sample in result.samples
+        if sample.phase == "recovery"
+        for measurement in sample.measurements
+        if measurement.channel == "cpu_utilization" and measurement.value == 26.0
+    )
+    assert stimulus_boundary.quality == Quality.GOOD
+    assert stimulus_boundary.metadata == {
+        "phase_boundary_interval": True,
+        "previous_phase": "baseline",
+        "current_phase": "stimulus",
+    }
+    assert recovery_boundary.quality == Quality.GOOD
+    assert recovery_boundary.metadata == {
+        "phase_boundary_interval": True,
+        "previous_phase": "stimulus",
+        "current_phase": "recovery",
+    }
+
+
+def test_baseline_to_recovery_boundary_is_tagged_when_workload_never_starts() -> None:
+    class StartFailingWorkload(FakeWorkload):
+        def start(self) -> None:
+            raise RuntimeError("synthetic workload start failure")
+
+    clock = FakeClock()
+    result = ExperimentEngine(
+        [UtilizationCollector([1.0, 0.5])],
+        ExperimentConfig(mode="cpu", interval_s=1.0, baseline_s=0, recovery_s=0),
+        sampler=sampler(clock),
+        workload_factory=lambda _workers: StartFailingWorkload(),
+    ).run()
+    recovery_measurement = next(
+        measurement
+        for sample in result.samples
+        if sample.phase == "recovery"
+        for measurement in sample.measurements
+    )
+    assert recovery_measurement.value == 0.5
+    assert recovery_measurement.metadata["phase_boundary_interval"] is True
+    assert recovery_measurement.metadata["previous_phase"] == "baseline"
+    assert result.workload_error == "synthetic workload start failure"
+
+
+def test_passive_mode_does_not_add_phase_boundary_metadata() -> None:
+    clock = FakeClock()
+    result = ExperimentEngine(
+        [UtilizationCollector([1.0, 2.0])],
+        ExperimentConfig(mode="passive", interval_s=1.0, duration_s=1.0),
+        sampler=sampler(clock),
+    ).run()
+    assert all(
+        "phase_boundary_interval" not in measurement.metadata
+        for sample in result.samples
+        for measurement in sample.measurements
+    )
 
 
 class StimulusRaisingSampler(ScheduledSampler):

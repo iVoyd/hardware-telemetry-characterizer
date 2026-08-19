@@ -30,8 +30,12 @@ sample count per phase and overall.
 
 The summary separates experiment sample frames from numeric observations:
 `sample_frame_count` counts acquisition frames, while
-`numeric_observation_count` counts GOOD numeric channel values used by channel
-statistics.
+`numeric_observation_count` counts all GOOD numeric channel values. The
+`phase_statistic_observation_count` and
+`phase_boundary_interval_count` fields make it explicit when interval-derived
+values cross a phase boundary: those raw values remain in `samples.csv` with
+metadata, but are excluded from phase-specific statistics. Instantaneous
+first-frame values are not excluded.
 
 ## Transient and steady-state behavior
 

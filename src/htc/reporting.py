@@ -86,6 +86,9 @@ def render_report(metadata: dict[str, Any], summary: dict[str, Any]) -> str:
         f"Created: {metadata.get('created_at', 'unknown')}",
         f"Samples: {summary.get('sample_frame_count', 0)}",
         f"Numeric observations: {summary.get('numeric_observation_count', 0)}",
+        f"Phase-statistic observations: {summary.get('phase_statistic_observation_count', 0)}",
+        "Phase-boundary intervals retained in raw evidence "
+        f"(excluded from phase statistics): {summary.get('phase_boundary_interval_count', 0)}",
         f"Guardrail: {summary.get('guardrail_triggered') or 'not triggered'}",
         f"Workload error: {summary.get('workload_error') or 'none reported'}",
         f"Interrupted: {summary.get('interrupted', False)}",
@@ -116,6 +119,8 @@ def render_report(metadata: dict[str, Any], summary: dict[str, Any]) -> str:
         [
             "",
             "Interpretation note: collector quality is evidence about acquisition;",
+            "interval-derived observations crossing phase boundaries remain in raw CSV",
+            "but are excluded from phase-specific statistics; metadata identifies them.",
             "characterization guardrails are generic safety controls, not acceptance limits.",
             "",
         ]
