@@ -97,6 +97,70 @@ def remote_command(config: RemoteConfig, command: list[str]) -> list[str]:
     return [*ssh_base(config), shlex.join(command)]
 
 
+def remote_temp_template(config: RemoteConfig) -> str:
+    """Build one absolute, validated template for the temporary run directory."""
+
+    return f"{config.parent_dir.rstrip('/')}/htc-run.XXXXXX"
+
+
+def remote_mktemp_command(config: RemoteConfig) -> list[str]:
+    """Build the read-only remote command that creates a temporary directory."""
+
+    return remote_command(config, ["mktemp", "-d", remote_temp_template(config)])
+
+
+def _mktemp_failure_detail(stderr: str | None) -> str:
+    """Return a short known-safe diagnostic without exposing connection data."""
+
+    normalized = " ".join((stderr or "").split()).lower()
+    for phrase in (
+        "too many templates",
+        "permission denied",
+        "no such file or directory",
+        "invalid template",
+    ):
+        if phrase in normalized:
+            return phrase
+    return "remote mktemp command failed"
+
+
+def _is_safe_remote_child(path: str, parent_dir: str) -> bool:
+    if not _REMOTE_TEMP_PATH.fullmatch(path):
+        return False
+    candidate = PurePosixPath(path)
+    parent = PurePosixPath(parent_dir)
+    if any(part in {".", ".."} for part in candidate.parts):
+        return False
+    try:
+        relative = candidate.relative_to(parent)
+    except ValueError:
+        return False
+    return bool(relative.parts)
+
+
+def create_remote_temp_dir(config: RemoteConfig) -> str:
+    """Create and validate one temporary remote child directory."""
+
+    try:
+        result = subprocess.run(
+            remote_mktemp_command(config),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        detail = _mktemp_failure_detail(exc.stderr)
+        raise RuntimeError(
+            f"remote temporary-directory creation failed (exit {exc.returncode}): {detail}"
+        ) from exc
+    temp_result = result.stdout.strip()
+    if not temp_result:
+        raise RuntimeError("remote temporary-directory creation returned no path")
+    if not _is_safe_remote_child(temp_result, config.parent_dir):
+        raise RuntimeError("remote temporary directory was not a safe child of HTC_DUT_DIR")
+    return temp_result
+
+
 def rsync_ssh_transport(config: RemoteConfig) -> str:
     """Build the shell fragment rsync passes to its remote-shell launcher."""
 
@@ -173,17 +237,7 @@ def run(
     )
     local_results.mkdir(parents=True, exist_ok=False)
     subprocess.run(remote_command(config, ["mkdir", "-p", config.parent_dir]), check=True)
-    temp_result = subprocess.run(
-        remote_command(config, ["mktemp", "-d", "--tmpdir", config.parent_dir, "htc-run.XXXXXX"]),
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
-    if not temp_result:
-        raise RuntimeError("remote temporary directory was not returned")
-    parent_prefix = config.parent_dir.rstrip("/") + "/"
-    if not _REMOTE_TEMP_PATH.fullmatch(temp_result) or not temp_result.startswith(parent_prefix):
-        raise RuntimeError("remote temporary directory was not a safe child of HTC_DUT_DIR")
+    temp_result = create_remote_temp_dir(config)
 
     try:
         _deploy(repository, config, temp_result)

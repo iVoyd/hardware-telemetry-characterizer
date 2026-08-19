@@ -66,6 +66,55 @@ def test_remote_command_quotes_untrusted_connection_values() -> None:
     assert command[-1] == "printf 'safe value'"
 
 
+def test_remote_mktemp_uses_one_absolute_template() -> None:
+    helper = load_helper()
+    config = helper.RemoteConfig("example.invalid", "operator", "/tmp/htc-deploy")
+
+    command = helper.remote_mktemp_command(config)
+
+    assert command[-1] == "mktemp -d /tmp/htc-deploy/htc-run.XXXXXX"
+    assert "--tmpdir" not in command[-1]
+    assert command[-1].count("htc-run.XXXXXX") == 1
+
+
+def test_remote_mktemp_failure_has_concise_safe_diagnostic(monkeypatch) -> None:
+    helper = load_helper()
+    config = helper.RemoteConfig("example.invalid", "operator", "/tmp/htc-deploy")
+
+    def fail(*_args, **_kwargs):
+        raise helper.subprocess.CalledProcessError(
+            1,
+            ["ssh", "operator@example.invalid", "mktemp"],
+            stderr="mktemp: too many templates\n",
+        )
+
+    monkeypatch.setattr(helper.subprocess, "run", fail)
+    with pytest.raises(RuntimeError, match=r"exit 1\): too many templates") as error:
+        helper.create_remote_temp_dir(config)
+    assert "example.invalid" not in str(error.value)
+    assert "operator" not in str(error.value)
+
+
+def test_remote_mktemp_result_must_be_a_real_child(monkeypatch) -> None:
+    helper = load_helper()
+    config = helper.RemoteConfig("example.invalid", "operator", "/tmp/htc-deploy")
+
+    def result(path: str):
+        return helper.subprocess.CompletedProcess([], 0, stdout=path + "\n", stderr="")
+
+    monkeypatch.setattr(helper.subprocess, "run", lambda *_args, **_kwargs: result("/tmp/other"))
+    with pytest.raises(RuntimeError, match="safe child"):
+        helper.create_remote_temp_dir(config)
+
+    monkeypatch.setattr(
+        helper.subprocess,
+        "run",
+        lambda *_args, **_kwargs: result("/tmp/htc-deploy/../outside"),
+    )
+    with pytest.raises(RuntimeError, match="safe child"):
+        helper.create_remote_temp_dir(config)
+
+
 def test_remote_characterize_arguments_are_mode_specific() -> None:
     helper = load_helper()
     passive = helper.characterize_command(
