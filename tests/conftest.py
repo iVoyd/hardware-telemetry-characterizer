@@ -8,9 +8,15 @@ from htc.adapters import CommandResult
 
 
 class FakeFilesystem:
-    def __init__(self, files: dict[str, str], directories: Iterable[str] = ()):
+    def __init__(
+        self,
+        files: dict[str, str],
+        directories: Iterable[str] = (),
+        resolved: dict[str, str] | None = None,
+    ):
         self.files = dict(files)
         self.directories = set(directories)
+        self.resolved = resolved or {}
 
     def read_text(self, path: str | Path) -> str:
         key = str(path)
@@ -25,6 +31,9 @@ class FakeFilesystem:
 
     def exists(self, path: str | Path) -> bool:
         return str(path) in self.files or str(path) in self.directories
+
+    def resolve(self, path: str | Path) -> Path:
+        return Path(self.resolved.get(str(path), str(path)))
 
 
 class FakeRunner:

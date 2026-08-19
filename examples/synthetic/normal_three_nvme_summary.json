@@ -3,8 +3,8 @@
   "scenario": "normal_three_nvme",
   "note": "Illustrative synthetic summary; not physical hardware evidence.",
   "channels": [
-    {"device_id": "nvme:hwmon0", "channel": "temp1", "unit": "°C", "mean": 40.25},
-    {"device_id": "nvme:hwmon1", "channel": "temp1", "unit": "°C", "mean": 42.25},
-    {"device_id": "nvme:hwmon2", "channel": "temp1", "unit": "°C", "mean": 44.25}
+    {"device_id": "nvme0", "channel": "temp1", "unit": "°C", "mean": 40.25},
+    {"device_id": "nvme1", "channel": "temp1", "unit": "°C", "mean": 42.25},
+    {"device_id": "nvme2", "channel": "temp1", "unit": "°C", "mean": 44.25}
   ]
 }

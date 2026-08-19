@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
+
 from conftest import FakeFilesystem, FakeRunner
 from htc.adapters import CommandResult, CommandTimeout, CommandUnavailable
 from htc.collectors.hwmon import HWMONCollector
 from htc.collectors.ipmi import IPMICollector
 from htc.collectors.network import NetworkCollector
-from htc.collectors.smart import SmartCollector
+from htc.collectors.smart import SmartCollector, parse_smart_numeric
 from htc.collectors.system import SystemCollector
 from htc.measurement import Quality
 
@@ -26,6 +28,41 @@ def test_hwmon_preserves_instances_with_identical_driver_names() -> None:
     values = {(item.device_id, item.channel): item.value for item in measurements}
     assert values[("nvme:hwmon0", "temp1")] == 41.0
     assert values[("nvme:hwmon1", "temp1")] == 52.0
+
+
+def test_hwmon_uses_resolved_nvme_controller_identity() -> None:
+    files = {
+        "/sys/class/hwmon/hwmon0/name": "nvme\n",
+        "/sys/class/hwmon/hwmon0/temp1_input": "41000\n",
+        "/sys/class/hwmon/hwmon1/name": "nvme\n",
+        "/sys/class/hwmon/hwmon1/temp1_input": "52000\n",
+        "/sys/class/hwmon/hwmon2/name": "nvme\n",
+        "/sys/class/hwmon/hwmon2/temp1_input": "63000\n",
+    }
+    resolved = {
+        "/sys/class/hwmon/hwmon0": "/sys/devices/pci0000:00/nvme/nvme0/hwmon/hwmon0",
+        "/sys/class/hwmon/hwmon1": "/sys/devices/pci0000:00/nvme/nvme1/hwmon/hwmon1",
+        "/sys/class/hwmon/hwmon2": "/sys/devices/pci0000:00/nvme/nvme2/hwmon/hwmon2",
+    }
+    fs = FakeFilesystem(
+        files,
+        [
+            "/sys/class/hwmon/hwmon0",
+            "/sys/class/hwmon/hwmon1",
+            "/sys/class/hwmon/hwmon2",
+        ],
+        resolved=resolved,
+    )
+    measurements = HWMONCollector(filesystem=fs).collect(NOW)
+    values = {(item.device_id, item.channel): item.value for item in measurements}
+    assert values[("nvme0", "temp1")] == 41.0
+    assert values[("nvme1", "temp1")] == 52.0
+    assert values[("nvme2", "temp1")] == 63.0
+    assert {item.device_id for item in measurements if item.channel == "temp1"} == {
+        "nvme0",
+        "nvme1",
+        "nvme2",
+    }
 
 
 def test_hwmon_reports_a_channel_missing_mid_run() -> None:
@@ -99,13 +136,13 @@ def test_smart_discovers_all_nvme_controllers_and_parses_fields() -> None:
     scan = CommandResult(
         ("smartctl", "--scan-open"), 0, "/dev/nvme0 -d nvme\n/dev/nvme1 -d nvme\n", "", 0.01
     )
-    smart_text = """SMART overall-health self-assessment test result: PASSED
+    smart_text = """SMART overall-health self-assessment test result: FAILED
 Critical Warning:                   0x00
-Temperature:                        37 Celsius
+Temperature:                        41 Celsius
 Temperature Sensor 1:               39 Celsius
 Available Spare:                    100%
 Percentage Used:                    2%
-Power On Hours:                     10
+Power On Hours:                     3,119
 Power Cycles:                       3
 Unsafe Shutdowns:                   1
 Media and Data Integrity Errors:    0
@@ -125,7 +162,29 @@ Error Information Log Entries:      0
     measurements = SmartCollector(runner=runner).collect(NOW)
     devices = {item.device_id for item in measurements if item.channel == "composite_temperature"}
     assert devices == {"nvme0", "nvme1"}
+    values = {
+        item.channel: item.value
+        for item in measurements
+        if item.device_id == "nvme0" and item.quality == Quality.GOOD
+    }
+    assert values["available_spare"] == 100
+    assert values["percentage_used"] == 2
+    assert values["power_on_hours"] == 3119
+    assert values["critical_warning"] == 0
+    assert values["composite_temperature"] == 41
+    health = next(item for item in measurements if item.channel == "overall_health")
+    assert health.value == "FAILED"
+    assert health.quality == Quality.GOOD
     assert any(item.channel == "unsafe_shutdowns" and item.value == 1 for item in measurements)
+
+
+def test_smart_numeric_parser_rejects_malformed_leading_values() -> None:
+    assert parse_smart_numeric("100%") == 100
+    assert parse_smart_numeric("2%") == 2
+    assert parse_smart_numeric("3,119 hours") == 3119
+    assert parse_smart_numeric("0x00") == 0
+    with pytest.raises(ValueError):
+        parse_smart_numeric("3,12 hours")
 
 
 def test_missing_smartctl_is_unavailable_not_a_dut_failure() -> None:

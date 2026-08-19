@@ -37,8 +37,13 @@ def test_replay_writes_required_artifacts_and_report(tmp_path: Path) -> None:
     }
     summary = json.loads((run_dir / "summary.json").read_text())
     devices = {row["device_id"] for row in summary["channels"]}
-    assert devices == {"nvme:hwmon0", "nvme:hwmon1", "nvme:hwmon2"}
-    assert "Hardware Telemetry Characterizer" in report_run(run_dir)
+    assert devices == {"nvme0", "nvme1", "nvme2"}
+    assert summary["sample_frame_count"] == 2
+    assert summary["numeric_observation_count"] == 6
+    report = report_run(run_dir)
+    assert "Hardware Telemetry Characterizer" in report
+    assert "Samples: 2" in report
+    assert "Numeric observations: 6" in report
 
 
 def test_replay_keeps_fault_quality_explicit(tmp_path: Path) -> None:

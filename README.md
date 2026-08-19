@@ -23,8 +23,9 @@ DUT captures, credentials, customer data, or employer-specific procedures.
 - Deterministic scheduled sampling with actual cadence statistics.
 - Passive observation and explicit-opt-in, bounded CPU baseline/stimulus/recovery
   characterization.
-- Generic thermal guardrails and guaranteed workload cleanup on normal,
-  interrupted, failed, and aborted paths.
+- CPU baseline/stimulus thermal guardrails that stop active workload before
+  recovery, with guaranteed workload cleanup on normal, interrupted, failed,
+  and aborted paths.
 - CSV, JSON, and text evidence artifacts for each run.
 - Synthetic replay scenarios for normal operation, missing tools, malformed or
   timed-out commands, stale/missing sensors, identity collisions, thermal
@@ -66,14 +67,17 @@ The CPU mode requires an explicit safety opt-in:
 
 The default worker count is approximately 25% of logical CPUs. The workload
 does not perform disk or network I/O and does not change persistent system
-configuration. `--max-temperature` is a generic acquisition guardrail, not a
-DUT qualification or production acceptance limit.
+configuration. `--max-temperature` is a generic active-experiment safety
+guardrail, not a DUT qualification or production acceptance limit. A baseline
+guard prevents the workload from starting; a stimulus guard or worker failure
+stops all workload processes before passive recovery begins.
 
 ## Collectors and quality
 
-The hwmon collector includes the sysfs instance in the device identity. Thus
-two generic `nvme` driver names remain independent (`nvme:hwmon0` and
-`nvme:hwmon1`) instead of overwriting each other. IPMI and SMART tooling are
+The hwmon collector resolves generic NVMe sysfs paths to controller identities
+such as `nvme0` and `nvme1` when available, while retaining an instance-based
+fallback such as `nvme:hwmon0`. Thus two generic `nvme` driver names remain
+independent instead of overwriting each other. IPMI and SMART tooling are
 optional; missing commands, timeouts, command failures, and parse failures are
 recorded rather than treated as DUT failures. Quality states include
 `GOOD`, `MISSING`, `STALE`, `TIMEOUT`, `PARSE_ERROR`, `COMMAND_ERROR`, and
@@ -86,7 +90,7 @@ Each run creates a timestamped directory containing:
 ```text
 metadata.json   configuration and run metadata
 samples.csv     every normalized observation, including non-GOOD quality
-summary.json    timing, channel statistics, and modest phase deltas
+summary.json    sample-frame count, timing, channel statistics, and phase deltas
 report.txt      human-readable summary
 ```
 
@@ -108,11 +112,14 @@ documented in [`docs/validation.md`](docs/validation.md).
 ## Remote DUT concept
 
 Development, Git, and credentials remain on the development WSL machine. The
-optional helper reads `HTC_DUT_HOST`, `HTC_DUT_USER`, `HTC_DUT_DIR`, and
-`HTC_DUT_PORT` from the environment, deploys to a temporary remote directory,
-runs a read-only or explicitly bounded command, and retrieves results to local
-ignored `hardware-results/`. See [`scripts/remote/deploy_and_run.py`](scripts/remote/deploy_and_run.py)
-and [`.env.example`](.env.example). Never commit real connection values.
+optional helper reads `HTC_DUT_HOST`, `HTC_DUT_USER`, `HTC_DUT_DIR`,
+`HTC_DUT_PORT`, and optionally `HTC_DUT_SSH_KEY` from the environment. It uses
+the same SSH transport for rsync, ssh, and scp, deploys to a temporary remote
+directory, runs a read-only or explicitly bounded command, and retrieves
+results to local ignored `hardware-results/`. Passive `--duration` and CPU
+`--baseline`/`--stimulus-duration`/`--recovery` arguments are kept distinct.
+See [`scripts/remote/deploy_and_run.py`](scripts/remote/deploy_and_run.py) and
+[`.env.example`](.env.example). Never commit real connection values.
 
 ## Current limitations
 
@@ -130,5 +137,5 @@ credential, serial, MAC, IP, raw inventory, or real DUT evidence, omit it.
 Keep characterization guardrails conceptually separate from production
 acceptance criteria. Before a public release, follow
 [`docs/PUBLIC_RELEASE_CHECKLIST.md`](docs/PUBLIC_RELEASE_CHECKLIST.md), inspect
-the complete history, and make only evidence-supported claims. A license is
-intentionally not included yet.
+the complete history, and make only evidence-supported claims. A license has
+not yet been selected and is intentionally not included.

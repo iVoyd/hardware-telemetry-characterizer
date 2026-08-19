@@ -8,14 +8,17 @@ measurement system that supplies it.
 Unit tests inject filesystem and command adapters to exercise scaling, parsing,
 quality states, timing, statistics, identity, and process-control decisions.
 They do not access `/sys`, `/proc`, IPMI, SMART, a network DUT, or root-only
-interfaces through real hardware.
+interfaces through real hardware. Safety tests assert that workload stop is
+observable before the first recovery sample, not merely after the experiment.
 
 ## Replay tests
 
 `tests/fixtures/scenarios/` contains explicitly synthetic scenarios for normal
 single- and three-controller observations, unavailable tools, command timeout,
 malformed IPMI output, missing and stale sensors, a thermal guard trigger, a
-workload process failure, and the hwmon identity-collision regression.
+workload process failure, and the hwmon identity-collision regression. SMART
+fixtures cover percentages, thousands separators, hexadecimal values, and
+textual health results.
 
 Replay writes the same `metadata.json`, `samples.csv`, `summary.json`, and
 `report.txt` shape as an actual run. This makes CLI and reporting behavior

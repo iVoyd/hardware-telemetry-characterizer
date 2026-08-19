@@ -16,7 +16,10 @@ def scenario_path(name_or_path: str | Path) -> Path:
     candidate = Path(name_or_path)
     if candidate.is_file():
         return candidate
-    names = [candidate, Path("tests/fixtures/scenarios") / candidate / "scenario.json"]
+    names = [
+        candidate / "scenario.json" if candidate.is_dir() else candidate,
+        Path("tests/fixtures/scenarios") / candidate / "scenario.json",
+    ]
     repo_root = Path(__file__).resolve().parents[2]
     names.append(repo_root / "tests/fixtures/scenarios" / candidate / "scenario.json")
     for path in names:

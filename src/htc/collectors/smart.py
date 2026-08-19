@@ -11,7 +11,11 @@ from ..measurement import Measurement, Quality, utc_now
 from .base import collector_status
 
 _DEVICE = re.compile(r"^\s*(/dev/nvme\d+)\b")
-_NUMBER = re.compile(r"[-+]?\d+(?:\.\d+)?")
+_NUMERIC_PREFIX = re.compile(
+    r"^\s*(?:(?P<hex>[+-]?0[xX][0-9a-fA-F]+)|"
+    r"(?P<decimal>[+-]?(?:(?:\d{1,3}(?:,\d{3})+)|\d+)(?:\.\d+)?))"
+)
+_NUMERIC_SUFFIX = re.compile(r"^(?:%|[A-Za-z°][A-Za-z0-9° /_-]*)?$")
 _FIELDS: tuple[tuple[str, str, str], ...] = (
     ("Critical Warning", "critical_warning", "count"),
     ("Temperature", "composite_temperature", "°C"),
@@ -23,6 +27,24 @@ _FIELDS: tuple[tuple[str, str, str], ...] = (
     ("Media and Data Integrity Errors", "media_data_integrity_errors", "count"),
     ("Error Information Log Entries", "error_log_entries", "count"),
 )
+
+
+def parse_smart_numeric(raw: str) -> int | float:
+    """Parse one leading numeric SMART value without accepting malformed text."""
+
+    match = _NUMERIC_PREFIX.match(raw)
+    if match is None:
+        raise ValueError(f"no leading numeric value: {raw!r}")
+    suffix = raw[match.end() :].strip()
+    if not _NUMERIC_SUFFIX.fullmatch(suffix):
+        raise ValueError(f"unexpected SMART value suffix: {suffix!r}")
+    token = match.group("hex") or match.group("decimal")
+    if token is None:
+        raise ValueError(f"no numeric token: {raw!r}")
+    if token.lower().startswith(("0x", "+0x", "-0x")):
+        return int(token, 0)
+    value = float(token.replace(",", ""))
+    return int(value) if value.is_integer() else value
 
 
 class SmartCollector:
@@ -97,19 +119,17 @@ class SmartCollector:
                     health_match.group(1).strip(),
                 )
             )
-        found = 0
+        recognized = bool(health_match)
         for label, channel, unit in _FIELDS:
             match = re.search(
                 rf"^\s*{re.escape(label)}\s*:\s*(.+)$", output, re.MULTILINE | re.IGNORECASE
             )
             if not match:
                 continue
-            token = match.group(1).split()[0]
+            recognized = True
             try:
-                value = int(token, 0) if token.lower().startswith("0x") else float(token)
-                if isinstance(value, float) and value.is_integer():
-                    value = int(value)
-            except ValueError:
+                value = parse_smart_numeric(match.group(1))
+            except ValueError as exc:
                 measurements.append(
                     Measurement(
                         timestamp,
@@ -119,26 +139,19 @@ class SmartCollector:
                         unit,
                         None,
                         Quality.PARSE_ERROR,
-                        f"unparseable smartctl value: {token}",
+                        str(exc),
                     )
                 )
             else:
                 measurements.append(
                     Measurement(timestamp, self.name, device_id, channel, unit, value)
                 )
-            found += 1
-
         for match in re.finditer(r"^\s*(Temperature Sensor \d+)\s*:\s*(.+)$", output, re.MULTILINE):
-            value_match = _NUMBER.search(match.group(2))
             channel = match.group(1).lower().replace(" ", "_")
-            if value_match:
-                measurements.append(
-                    Measurement(
-                        timestamp, self.name, device_id, channel, "°C", float(value_match.group())
-                    )
-                )
-                found += 1
-            else:
+            recognized = True
+            try:
+                value = parse_smart_numeric(match.group(2))
+            except ValueError as exc:
                 measurements.append(
                     Measurement(
                         timestamp,
@@ -148,11 +161,15 @@ class SmartCollector:
                         "°C",
                         None,
                         Quality.PARSE_ERROR,
-                        "unparseable temperature sensor value",
+                        str(exc),
                     )
                 )
+            else:
+                measurements.append(
+                    Measurement(timestamp, self.name, device_id, channel, "°C", value)
+                )
 
-        if not measurements or found == 0:
+        if not measurements or not recognized:
             return [
                 collector_status(
                     self.name,

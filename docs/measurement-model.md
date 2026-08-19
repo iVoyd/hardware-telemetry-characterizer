@@ -13,9 +13,11 @@ Every observation is a typed `Measurement` with:
 ## Identity
 
 Identity must survive multiple instances of a generic driver. The hwmon
-collector combines the driver name with its sysfs instance directory, so
-generic `nvme` names do not collapse separate controllers. Network interfaces
-use generic interface names. No serial, MAC, hostname, IP, or asset identity is
+collector resolves the symlink-backed sysfs path and uses a generic controller
+component such as `nvme0` when available. If resolution is unavailable, it
+combines the driver name with the hwmon instance directory, so generic `nvme`
+names still do not collapse separate controllers. Network interfaces use
+generic interface names. No serial, MAC, hostname, IP, or asset identity is
 required by the model.
 
 ## Cadence and timing
@@ -25,6 +27,11 @@ is therefore accounted for rather than added to every requested sleep. Each
 sample records scheduled, start, and finish timestamps. Reports calculate
 expected interval, actual minimum/maximum/mean, standard deviation, and late
 sample count per phase and overall.
+
+The summary separates experiment sample frames from numeric observations:
+`sample_frame_count` counts acquisition frames, while
+`numeric_observation_count` counts GOOD numeric channel values used by channel
+statistics.
 
 ## Transient and steady-state behavior
 

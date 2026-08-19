@@ -7,6 +7,7 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
@@ -94,8 +95,12 @@ class CpuWorkload:
         self.python_executable = python_executable
         self.processes: list[subprocess.Popen[str]] = []
         self._failure_reason: str | None = None
+        self._monitor_stop = threading.Event()
+        self._monitor_thread: threading.Thread | None = None
+        self._termination_lock = threading.Lock()
 
     def start(self) -> None:
+        self._monitor_stop.clear()
         try:
             for _ in range(self.workers):
                 self.processes.append(
@@ -108,6 +113,12 @@ class CpuWorkload:
                         start_new_session=True,
                     )
                 )
+            self._monitor_thread = threading.Thread(
+                target=self._monitor_workers,
+                name="htc-cpu-workload-monitor",
+                daemon=True,
+            )
+            self._monitor_thread.start()
         except OSError as exc:
             self._failure_reason = str(exc)
             self.stop()
@@ -115,10 +126,17 @@ class CpuWorkload:
 
     @property
     def failed(self) -> bool:
+        if self._failure_reason is not None:
+            return True
         for process in self.processes:
             code = process.poll()
             if code is not None and code != 0:
-                self._failure_reason = f"worker exited with status {code}"
+                try:
+                    self._terminate_processes()
+                except RuntimeError as exc:
+                    self._failure_reason = f"workload cleanup failed: {exc}"
+                else:
+                    self._failure_reason = f"worker exited with status {code}"
                 return True
         return False
 
@@ -127,17 +145,49 @@ class CpuWorkload:
         return self._failure_reason
 
     def stop(self) -> None:
-        for process in self.processes:
-            if process.poll() is None:
-                process.terminate()
-        for process in self.processes:
-            if process.poll() is None:
-                try:
-                    process.wait(timeout=1.0)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait(timeout=1.0)
+        self._monitor_stop.set()
+        monitor = self._monitor_thread
+        if monitor is not None and monitor is not threading.current_thread():
+            monitor.join()
+        self._terminate_processes()
         self.processes.clear()
+        self._monitor_thread = None
+
+    def _monitor_workers(self) -> None:
+        while not self._monitor_stop.wait(0.05):
+            for process in self.processes:
+                code = process.poll()
+                if code is not None and code != 0:
+                    try:
+                        self._terminate_processes()
+                    except RuntimeError as exc:
+                        self._failure_reason = f"workload cleanup failed: {exc}"
+                    else:
+                        self._failure_reason = f"worker exited with status {code}"
+                    return
+
+    def _terminate_processes(self) -> None:
+        with self._termination_lock:
+            processes = tuple(self.processes)
+            for process in processes:
+                try:
+                    if process.poll() is None:
+                        process.terminate()
+                except OSError:
+                    continue
+            for process in processes:
+                try:
+                    if process.poll() is None:
+                        process.wait(timeout=1.0)
+                except subprocess.TimeoutExpired:
+                    try:
+                        process.kill()
+                        process.wait(timeout=1.0)
+                    except (OSError, subprocess.TimeoutExpired):
+                        continue
+            remaining = tuple(process for process in processes if process.poll() is None)
+            if remaining:
+                raise RuntimeError(f"{len(remaining)} workload process(es) did not terminate")
 
 
 class ScheduledSampler:
@@ -224,11 +274,15 @@ class ExperimentEngine:
                 samples.extend(self._phase("passive", self.config.duration_s, len(samples)))
             else:
                 samples.extend(self._phase("baseline", self.config.baseline_s, len(samples)))
-                try:
-                    workload = self.workload_factory(self.config.workers)
-                    workload.start()
-                except Exception as exc:  # Operational failure becomes evidence, not a crash.
-                    self._workload_error = str(exc)
+                if self._guardrail_triggered is None:
+                    try:
+                        workload = self.workload_factory(self.config.workers)
+                        workload.start()
+                    except Exception as exc:  # Operational failure becomes evidence, not a crash.
+                        self._workload_error = str(exc)
+                        if workload is not None:
+                            workload.stop()
+                            workload = None
                 if workload and not self._workload_error:
                     samples.extend(
                         self._phase(
@@ -293,8 +347,10 @@ class ExperimentEngine:
                         f"collector exception: {exc}",
                     )
                 )
-        if self._thermal_guard_reason(measurements):
-            self._guardrail_triggered = self._thermal_guard_reason(measurements)
+        if self.config.mode == "cpu":
+            guardrail_reason = self._thermal_guard_reason(measurements)
+            if guardrail_reason and self._guardrail_triggered is None:
+                self._guardrail_triggered = guardrail_reason
         return measurements
 
     def _guardrail_stop(self) -> bool:
@@ -303,8 +359,12 @@ class ExperimentEngine:
     def _workload_stopped(self, workload: WorkloadHandle) -> bool:
         if workload.failed:
             self._workload_error = workload.failure_reason or "workload process failed"
+            workload.stop()
             return True
-        return self._guardrail_stop()
+        if self._guardrail_stop():
+            workload.stop()
+            return True
+        return False
 
     def _thermal_guard_reason(self, measurements: Iterable[Measurement]) -> str | None:
         limit = self.config.max_temperature_c

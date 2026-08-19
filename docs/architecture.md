@@ -27,14 +27,15 @@ Physical / Synthetic Sources
 - `collectors/` reads hwmon/sysfs, `/proc`, IPMI, SMART/NVMe, and network
   counters without changing the system.
 - `experiment.py` provides absolute-time sampling, passive mode, CPU
-  baseline/stimulus/recovery phases, process cleanup, and generic thermal
-  guardrails.
+  baseline/stimulus/recovery phases, generic thermal guardrails, and immediate
+  workload stop before recovery or abort completion.
 - `statistics.py` calculates small, reproducible channel and timing summaries.
 - `reporting.py` writes the four run artifacts and a human-readable report.
 - `replay.py` turns explicitly synthetic scenario JSON into the same artifact
   shape as an actual run.
-- `scripts/remote/` contains environment-driven deployment orchestration. It
-  is intentionally not invoked by local tests or CI.
+- `scripts/remote/` contains environment-driven deployment orchestration with
+  one configured SSH transport shared by ssh, rsync, and scp. It is
+  intentionally not invoked by local tests or CI.
 
 The source of truth is the code and tests. Documentation explains boundaries,
 not unverified hardware behavior.

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from pathlib import Path
 
 from ..adapters import Filesystem, PathFilesystem
 from ..measurement import Measurement, Quality, utc_now
+
+_NVME_CONTROLLER = re.compile(r"nvme\d+")
 
 
 def _channel_unit(prefix: str) -> tuple[str, float]:
@@ -34,9 +37,9 @@ def _channel_unit(prefix: str) -> tuple[str, float]:
 class HWMONCollector:
     """Collect generic ``*_input`` channels from Linux hwmon instances.
 
-    The sysfs directory name is part of the identity. This intentionally keeps
-    ``nvme:hwmon0`` and ``nvme:hwmon1`` independent even when both ``name``
-    files contain the generic driver name ``nvme``.
+    For NVMe hwmon entries, the resolved sysfs path is inspected for a generic
+    controller component such as ``nvme0``. If resolution is unavailable, the
+    hwmon instance remains part of a collision-safe fallback identity.
     """
 
     name = "hwmon"
@@ -69,7 +72,7 @@ class HWMONCollector:
                     )
                 )
                 continue
-            device_id = f"{driver_name}:{instance}"
+            device_id = self._device_id(driver_name, entry)
             for input_path in self.filesystem.glob(entry / "*_input"):
                 prefix = input_path.name.removesuffix("_input")
                 channel, unit_scale = self._channel_for(entry, prefix)
@@ -116,6 +119,17 @@ class HWMONCollector:
                     )
                 )
         return measurements
+
+    def _device_id(self, driver_name: str, entry: Path) -> str:
+        if driver_name.lower() == "nvme":
+            try:
+                resolved_parts = self.filesystem.resolve(entry).parts
+            except (OSError, RuntimeError):
+                resolved_parts = ()
+            for component in reversed(resolved_parts):
+                if _NVME_CONTROLLER.fullmatch(component):
+                    return component
+        return f"{driver_name}:{entry.name}"
 
     def _channel_for(self, entry: Path, prefix: str) -> tuple[str, tuple[str, float]]:
         unit, scale = _channel_unit(prefix)

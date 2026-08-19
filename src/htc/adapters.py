@@ -72,6 +72,9 @@ class Filesystem(Protocol):
     def exists(self, path: str | Path) -> bool:
         """Return whether a path exists."""
 
+    def resolve(self, path: str | Path) -> Path:
+        """Resolve symlinks where the filesystem supports them."""
+
 
 class PathFilesystem:
     """Production filesystem adapter."""
@@ -84,3 +87,6 @@ class PathFilesystem:
 
     def exists(self, path: str | Path) -> bool:
         return Path(path).exists()
+
+    def resolve(self, path: str | Path) -> Path:
+        return Path(path).resolve(strict=False)

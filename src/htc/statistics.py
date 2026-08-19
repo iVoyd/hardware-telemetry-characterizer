@@ -126,12 +126,15 @@ def derived_metrics(samples: Iterable[Sample]) -> list[dict[str, object]]:
 
 
 def summarize(result: ExperimentResult) -> dict[str, object]:
+    channels = channel_statistics(result.samples)
     return {
         "mode": result.config.mode,
         "guardrail_triggered": result.guardrail_triggered,
         "workload_error": result.workload_error,
         "interrupted": result.interrupted,
+        "sample_frame_count": len(result.samples),
+        "numeric_observation_count": sum(row["sample_count"] for row in channels),
         "timing": timing_statistics(result.samples, result.config.interval_s),
-        "channels": channel_statistics(result.samples),
+        "channels": channels,
         "derived": derived_metrics(result.samples),
     }
