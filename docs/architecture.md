@@ -1,9 +1,7 @@
 # Architecture
 
-The V1 keeps acquisition, experiment control, and evidence generation separate.
-Collectors expose generic Linux interfaces through injectable command and
-filesystem seams, so replay and fault tests do not need root or a physical
-machine.
+HTC separates acquisition, experiment control, and reporting so each part can
+be tested independently.
 
 ```text
 Physical / Synthetic Sources
@@ -21,29 +19,29 @@ Physical / Synthetic Sources
 
 ## Responsibilities
 
-- `measurement.py` defines the typed observation and explicit acquisition
-  quality model.
-- `adapters.py` contains shell-free command execution and filesystem seams.
+- `measurement.py` defines the typed observation model and acquisition quality
+  states.
+- `adapters.py` provides shell-free command execution and filesystem interfaces.
+  Tests replace these interfaces with deterministic fakes.
 - `collectors/` reads hwmon/sysfs, `/proc`, IPMI, SMART/NVMe, and network
-  counters without changing the system.
-- SMART and IPMI accept an immutable optional `sudo -n` argv prefix for
-  explicit privileged read-only access; discovery and all other collectors
-  remain unprivileged.
-- `experiment.py` provides absolute-time sampling, passive mode, CPU
-  baseline/stimulus/recovery phases, generic thermal guardrails, and workload
-  stop before every recovery phase. Shutdown failures are recorded and block
-  recovery until cleanup succeeds; outer cleanup remains best-effort.
-- `statistics.py` calculates small, reproducible channel and timing summaries.
-- `reporting.py` writes the four run artifacts and a human-readable report.
-- `replay.py` turns explicitly synthetic scenario JSON into the same artifact
-  shape as an actual run.
-- `scripts/remote/` contains environment-driven deployment orchestration with
-  one configured SSH transport shared by ssh, rsync, and scp. `setup_dut.sh`
-  performs only a read-only prerequisite check; `validate_dut.sh` defaults to
-  passive observation, requires explicit interactive confirmation for CPU
-  stimulus, validates retrieved artifacts, and optionally packages one run.
-  These scripts are intentionally not invoked against a DUT by local tests or
-  CI.
+  counters without changing system configuration.
+- `experiment.py` schedules passive and CPU experiments against an absolute
+  timeline. CPU runs have baseline, stimulus, and recovery phases, generic
+  thermal guards, and workload cleanup before recovery. A shutdown failure is
+  recorded and blocks recovery until cleanup succeeds; outer cleanup remains
+  best effort.
+- `statistics.py` calculates channel and timing summaries. Interval-derived
+  CPU-utilization measurements that cross a phase boundary remain in the raw
+  samples but are excluded from phase statistics.
+- `reporting.py` writes `metadata.json`, `samples.csv`, `summary.json`, and
+  `report.txt`.
+- `replay.py` turns synthetic scenario JSON into the same artifact shape as an
+  actual run.
+- `scripts/remote/` handles environment-driven deployment. It shares one SSH
+  configuration across SSH, rsync, and scp, and retrieves one result directory
+  into ignored local storage. `setup_dut.sh` performs a read-only prerequisite
+  check; `validate_dut.sh` defaults to passive observation and requires
+  interactive confirmation for CPU stimulus.
 
-The source of truth is the code and tests. Documentation explains boundaries,
-not unverified hardware behavior.
+The source and tests are the source of truth. The documentation describes
+interfaces and boundaries rather than unverified hardware behavior.

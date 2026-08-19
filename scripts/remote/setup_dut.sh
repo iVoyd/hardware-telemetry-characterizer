@@ -34,7 +34,7 @@ fi
 if [[ "$top_level" != "$repo_root" ]]; then
     die "resolved path is not the repository root: $repo_root"
 fi
-for required_path in AGENTS.md pyproject.toml scripts/remote/deploy_and_run.py; do
+for required_path in pyproject.toml scripts/remote/deploy_and_run.py; do
     if [[ ! -e "$repo_root/$required_path" ]]; then
         die "unrecognized repository structure; missing $required_path"
     fi

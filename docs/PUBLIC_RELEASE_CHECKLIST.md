@@ -1,25 +1,32 @@
 # Public Release Checklist
 
-Complete this checklist immediately before any public release. Do not add a
-license or tag `v0.1.0` until the audit is complete.
+Use this checklist before a future public release. If any information is
+uncertain, omit it and resolve the question before changing repository
+visibility.
 
-- [ ] Grep the repository and history for employer, company, product, customer, fixture, and internal-system names.
-- [ ] Run a secrets scan and inspect suspicious high-entropy strings manually.
-- [ ] Inspect the complete Git history, not only the current tree.
-- [ ] Inspect every fixture and example.
-- [ ] Verify every committed example and sample is explicitly synthetic.
-- [ ] Verify no physical DUT result directory or raw capture is tracked.
-- [ ] Verify no serial number, MAC address, IP address, hostname, asset tag, credential, or customer information is present.
-- [ ] Verify `.gitignore` covers environment files, credentials, results, captures, inventories, logs, and raw SMART/IPMI/DMI files.
-- [ ] Verify no code was copied from a private repository.
-- [ ] Verify no internal QC procedure, acceptance criterion, proprietary sequence, or private limit is reproduced.
-- [ ] Verify claims in README and docs are supported by code or tests.
-- [ ] Run the complete pytest suite.
-- [ ] Run Ruff lint and format checks.
-- [ ] Verify CI passes using synthetic fixtures only.
-- [ ] Select an appropriate open-source license.
-- [ ] Add `LICENSE` only immediately before public release.
-- [ ] Tag `v0.1.0` only after the audit and license decision.
+- [ ] Search the current tree and complete reachable history for employer,
+      company, product, customer, fixture, and internal-system names.
+- [ ] Run an available secrets scanner and inspect suspicious strings manually.
+- [ ] Inspect every fixture and example; verify each committed sample is
+      synthetic.
+- [ ] Confirm no physical result directory, raw capture, log, inventory,
+      serial number, MAC address, IP address, hostname, asset tag, credential,
+      or customer data is tracked.
+- [ ] Confirm `.gitignore` covers environment files, credentials, results,
+      captures, inventories, logs, and raw SMART/IPMI/DMI files.
+- [ ] Confirm no private source, internal QC procedure, proprietary sequence,
+      acceptance criterion, or private limit has been reproduced.
+- [ ] Review README, docs, CLI help, and public claims against the code and
+      tests.
+- [ ] Run pytest, Ruff lint and format checks, compile checks, and ShellCheck
+      when available.
+- [ ] Build and inspect the wheel and sdist; install the wheel in an isolated
+      environment and run CLI and synthetic replay smoke tests.
+- [ ] Verify the MIT `LICENSE` is present and package metadata identifies it.
+- [ ] Confirm the final worktree and distribution contents contain no local or
+      physical artifacts.
+- [ ] Make the repository public only after the preceding checks pass.
+- [ ] Create a release tag only after the public state is confirmed.
 
-If any data is uncertain, omit it. Keep generic characterization guardrails
-separate from production acceptance criteria.
+Keep experiment guardrails separate from production acceptance criteria. A
+release tag and public visibility are separate final steps.

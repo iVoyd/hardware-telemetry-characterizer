@@ -87,7 +87,6 @@ def _fake_remote_workspace(tmp_path: Path) -> tuple[Path, Path, dict[str, str]]:
     remote_dir = workspace / "scripts" / "remote"
     remote_dir.mkdir(parents=True)
     for relative in (
-        "AGENTS.md",
         "pyproject.toml",
         "scripts/remote/deploy_and_run.py",
         "scripts/remote/result_tools.py",
