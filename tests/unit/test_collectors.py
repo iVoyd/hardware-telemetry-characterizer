@@ -134,11 +134,74 @@ def test_ipmi_timeout_and_malformed_output_are_explicit() -> None:
     assert IPMICollector(runner=malformed).collect(NOW)[0].quality == Quality.PARSE_ERROR
 
 
+def test_ipmi_interface_access_failures_are_unavailable_and_distinct() -> None:
+    denied_runner = FakeRunner(
+        {
+            ("ipmitool", "sensor"): CommandResult(
+                ("ipmitool", "sensor"), 1, "", "unable to open /dev/ipmi0: Permission denied", 0.01
+            )
+        }
+    )
+    denied = IPMICollector(
+        runner=denied_runner, filesystem=FakeFilesystem({}, ["/dev/ipmi0"])
+    ).collect(NOW)[0]
+    assert denied.quality == Quality.UNAVAILABLE
+    assert denied.error == "insufficient permission to access local IPMI interface"
+
+    absent_runner = FakeRunner(
+        {
+            ("ipmitool", "sensor"): CommandResult(
+                ("ipmitool", "sensor"), 1, "", "could not open device", 0.01
+            )
+        }
+    )
+    absent = IPMICollector(runner=absent_runner, filesystem=FakeFilesystem({})).collect(NOW)[0]
+    assert absent.quality == Quality.UNAVAILABLE
+    assert absent.error == "local IPMI interface is not present"
+
+
+def test_ipmi_privileged_read_uses_exact_sudo_argv_and_denial_is_unavailable() -> None:
+    result = CommandResult(
+        ("sudo", "-n", "ipmitool", "sensor"),
+        0,
+        "CPU Temp | 42 | degrees C | ok\n",
+        "",
+        0.01,
+    )
+    runner = FakeRunner({("sudo", "-n", "ipmitool", "sensor"): result})
+    measurements = IPMICollector(
+        runner=runner,
+        filesystem=FakeFilesystem({}, ["/dev/ipmi0"]),
+        command_prefix=("sudo", "-n"),
+    ).collect(NOW)
+    assert runner.calls == [("sudo", "-n", "ipmitool", "sensor")]
+    assert any(item.channel == "CPU Temp" and item.value == 42 for item in measurements)
+
+    denied_runner = FakeRunner(
+        {
+            ("sudo", "-n", "ipmitool", "sensor"): CommandResult(
+                ("sudo", "-n", "ipmitool", "sensor"),
+                1,
+                "",
+                "sudo: a password is required\n",
+                0.01,
+            )
+        }
+    )
+    denied = IPMICollector(
+        runner=denied_runner,
+        filesystem=FakeFilesystem({}, ["/dev/ipmi0"]),
+        command_prefix=("sudo", "-n"),
+    ).collect(NOW)[0]
+    assert denied.quality == Quality.UNAVAILABLE
+
+
 def test_smart_discovers_all_nvme_controllers_and_parses_fields() -> None:
     scan = CommandResult(
-        ("smartctl", "--scan-open"), 0, "/dev/nvme0 -d nvme\n/dev/nvme1 -d nvme\n", "", 0.01
+        ("smartctl", "--scan"), 0, "/dev/nvme0 -d nvme\n/dev/nvme1 -d nvme\n", "", 0.01
     )
     smart_text = """SMART overall-health self-assessment test result: FAILED
+Serial Number: synthetic-controller-value
 Critical Warning:                   0x00
 Temperature:                        41 Celsius
 Temperature Sensor 1:               39 Celsius
@@ -152,7 +215,7 @@ Error Information Log Entries:      0
 """
     runner = FakeRunner(
         {
-            ("smartctl", "--scan-open"): scan,
+            ("smartctl", "--scan"): scan,
             ("smartctl", "-a", "-d", "nvme", "/dev/nvme0"): CommandResult(
                 (), 0, smart_text, "", 0.01
             ),
@@ -178,6 +241,8 @@ Error Information Log Entries:      0
     assert health.value == "FAILED"
     assert health.quality == Quality.GOOD
     assert any(item.channel == "unsafe_shutdowns" and item.value == 1 for item in measurements)
+    assert runner.calls[0] == ("smartctl", "--scan")
+    assert all(item.channel != "serial_number" for item in measurements)
 
 
 def test_smart_numeric_parser_rejects_malformed_leading_values() -> None:
@@ -190,9 +255,73 @@ def test_smart_numeric_parser_rejects_malformed_leading_values() -> None:
 
 
 def test_missing_smartctl_is_unavailable_not_a_dut_failure() -> None:
-    runner = FakeRunner({("smartctl", "--scan-open"): CommandUnavailable("missing")})
+    runner = FakeRunner({("smartctl", "--scan"): CommandUnavailable("missing")})
     measurement = SmartCollector(runner=runner).collect(NOW)[0]
     assert measurement.quality == Quality.UNAVAILABLE
+
+
+def test_smart_permission_denial_is_unavailable_not_parse_error() -> None:
+    runner = FakeRunner(
+        {
+            ("smartctl", "--scan"): CommandResult(
+                ("smartctl", "--scan"), 0, "/dev/nvme0 -d nvme\n", "", 0.01
+            ),
+            ("smartctl", "-a", "-d", "nvme", "/dev/nvme0"): CommandResult(
+                ("smartctl", "-a", "-d", "nvme", "/dev/nvme0"),
+                1,
+                "",
+                "Permission denied\n",
+                0.01,
+            ),
+        }
+    )
+    measurement = SmartCollector(runner=runner).collect(NOW)[0]
+    assert measurement.quality == Quality.UNAVAILABLE
+    assert measurement.error == "insufficient permission to read NVMe SMART data"
+
+
+def test_smart_privileged_read_uses_exact_sudo_argv_and_parse_errors_remain_explicit() -> None:
+    smart_text = """SMART overall-health self-assessment test result: PASSED
+Temperature: not-a-number Celsius
+"""
+    runner = FakeRunner(
+        {
+            ("smartctl", "--scan"): CommandResult(
+                ("smartctl", "--scan"), 0, "/dev/nvme0 -d nvme\n", "", 0.01
+            ),
+            ("sudo", "-n", "smartctl", "-a", "-d", "nvme", "/dev/nvme0"): CommandResult(
+                ("sudo", "-n", "smartctl", "-a", "-d", "nvme", "/dev/nvme0"),
+                0,
+                smart_text,
+                "",
+                0.01,
+            ),
+        }
+    )
+    measurements = SmartCollector(runner=runner, command_prefix=("sudo", "-n")).collect(NOW)
+    assert runner.calls == [
+        ("smartctl", "--scan"),
+        ("sudo", "-n", "smartctl", "-a", "-d", "nvme", "/dev/nvme0"),
+    ]
+    temperature = next(item for item in measurements if item.channel == "composite_temperature")
+    assert temperature.quality == Quality.PARSE_ERROR
+
+    denied_runner = FakeRunner(
+        {
+            ("smartctl", "--scan"): CommandResult(
+                ("smartctl", "--scan"), 0, "/dev/nvme0 -d nvme\n", "", 0.01
+            ),
+            ("sudo", "-n", "smartctl", "-a", "-d", "nvme", "/dev/nvme0"): CommandResult(
+                ("sudo", "-n", "smartctl", "-a", "-d", "nvme", "/dev/nvme0"),
+                1,
+                "",
+                "sudo: a password is required\n",
+                0.01,
+            ),
+        }
+    )
+    denied = SmartCollector(runner=denied_runner, command_prefix=("sudo", "-n")).collect(NOW)[0]
+    assert denied.quality == Quality.UNAVAILABLE
 
 
 def test_network_collector_reads_standard_sysfs_counters() -> None:

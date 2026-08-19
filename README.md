@@ -20,6 +20,8 @@ DUT captures, credentials, customer data, or employer-specific procedures.
 - Injectable command and filesystem boundaries for hardware-free tests.
 - Read-only Linux collectors for hwmon/sysfs, CPU/system files, IPMI,
   SMART/NVMe, and network sysfs counters.
+- Optional, explicit `--privileged-read` access uses only `sudo -n` for
+  read-only SMART/IPMI commands; the engine and CPU workload remain unprivileged.
 - Deterministic scheduled sampling with actual cadence statistics.
 - Passive observation and explicit-opt-in, bounded CPU baseline/stimulus/recovery
   characterization.
@@ -55,6 +57,9 @@ python -m venv .venv
 
 # One read-only snapshot; absent optional tools become explicit quality states.
 .venv/bin/htc discover
+
+# Optional: read-only SMART/IPMI access through non-interactive sudo -n.
+.venv/bin/htc discover --privileged-read
 
 # Passive observation. Run output is written below ignored results/.
 .venv/bin/htc characterize --mode passive --duration 10 --interval 2
@@ -129,6 +134,9 @@ helper:
 # Routine passive validation: 30 seconds at a 2-second interval.
 ./scripts/remote/validate_dut.sh
 
+# Optional: enable only the SMART/IPMI privileged read commands.
+./scripts/remote/validate_dut.sh --privileged-read
+
 # Later, controlled CPU characterization requires an interactive confirmation.
 ./scripts/remote/validate_dut.sh --cpu
 ```
@@ -141,7 +149,9 @@ temporary remote directory, and retrieves results to ignored local
 `hardware-results/`. Passive `--duration` and CPU
 `--baseline`/`--stimulus-duration`/`--recovery` arguments remain distinct. CPU
 mode always passes `--enable-stimulus` only after the operator types `CPU` at
-the confirmation prompt. See [`scripts/remote/deploy_and_run.py`](scripts/remote/deploy_and_run.py),
+the confirmation prompt. `--privileged-read` is independent of CPU mode and
+never runs HTC or its workload under sudo. See
+[`scripts/remote/deploy_and_run.py`](scripts/remote/deploy_and_run.py),
 [`scripts/remote/setup_dut.sh`](scripts/remote/setup_dut.sh),
 [`scripts/remote/validate_dut.sh`](scripts/remote/validate_dut.sh), and
 [`.env.example`](.env.example). Never commit real connection values.

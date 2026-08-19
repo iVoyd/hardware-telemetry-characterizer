@@ -32,6 +32,7 @@ class ExperimentConfig:
     recovery_s: float = 6.0
     workers: int = 1
     max_temperature_c: float | None = 85.0
+    privileged_read: bool = False
 
     def __post_init__(self) -> None:
         if self.mode not in {"passive", "cpu"}:
@@ -312,6 +313,7 @@ class ExperimentEngine:
             interrupted=interrupted,
             metadata={
                 "read_only_collectors": True,
+                "privileged_read": self.config.privileged_read,
                 "active_stimulus": self.config.mode == "cpu",
                 "guardrail_is_not_acceptance_limit": True,
             },

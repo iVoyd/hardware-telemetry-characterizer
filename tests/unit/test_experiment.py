@@ -231,6 +231,14 @@ def test_passive_high_temperature_is_not_an_active_guard_event() -> None:
     assert result.metadata["active_stimulus"] is False
 
 
+def test_privileged_read_setting_is_recorded_without_changing_experiment_mode() -> None:
+    clock = FakeClock()
+    config = ExperimentConfig(mode="passive", interval_s=1.0, duration_s=0, privileged_read=True)
+    result = ExperimentEngine([TemperatureCollector([40.0])], config, sampler=sampler(clock)).run()
+    assert result.metadata["privileged_read"] is True
+    assert result.metadata["active_stimulus"] is False
+
+
 def test_workload_failure_is_reported_without_losing_collected_data() -> None:
     clock = FakeClock()
     workload = FakeWorkload(failed=True)

@@ -117,8 +117,43 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 printf "python3_version: "; python3 --version 2>&1
 printf "python3 path: "; command -v python3 || true
-if command -v ipmitool >/dev/null 2>&1; then printf "ipmitool: available\n"; else printf "ipmitool: unavailable (IPMI collector will report unavailable)\n"; fi
-if command -v smartctl >/dev/null 2>&1; then printf "smartctl: available\n"; else printf "smartctl: unavailable (SMART collector will report unavailable)\n"; fi
+if command -v ipmitool >/dev/null 2>&1; then
+    printf "ipmitool: available\n"
+    if test -e /dev/ipmi0 || test -e /dev/ipmi/0 || test -e /dev/ipmidev/0; then
+        printf "local IPMI interface: present\n"
+        if ipmitool sensor >/dev/null 2>&1; then
+            printf "IPMI unprivileged access: available\n"
+        else
+            printf "IPMI unprivileged access: restricted\n"
+        fi
+    else
+        printf "local IPMI interface: absent\n"
+        printf "IPMI unprivileged access: unavailable (no local interface)\n"
+    fi
+    if sudo -n ipmitool sensor >/dev/null 2>&1; then
+        printf "IPMI sudo-n read access: available\n"
+    else
+        printf "IPMI sudo-n read access: unavailable or denied\n"
+    fi
+else
+    printf "ipmitool: unavailable (IPMI collector will report unavailable)\n"
+    printf "local IPMI interface: not checked\n"
+fi
+if command -v smartctl >/dev/null 2>&1; then
+    printf "smartctl: available\n"
+    if smartctl --scan >/dev/null 2>&1; then
+        printf "SMART unprivileged access: available\n"
+    else
+        printf "SMART unprivileged access: restricted\n"
+    fi
+    if sudo -n smartctl --scan-open >/dev/null 2>&1; then
+        printf "SMART sudo-n read access: available\n"
+    else
+        printf "SMART sudo-n read access: unavailable or denied\n"
+    fi
+else
+    printf "smartctl: unavailable (SMART collector will report unavailable)\n"
+fi
 if test -r /sys/class/hwmon; then printf "hwmon: readable\n"; else printf "hwmon: not readable\n"; fi
 if test -r /proc/stat; then printf "proc-stat: readable\n"; else printf "proc-stat: not readable\n"; fi
 ') || die "SSH connectivity or read-only prerequisite check failed"

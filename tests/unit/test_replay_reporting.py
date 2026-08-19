@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
+from htc.experiment import ExperimentConfig, ExperimentResult
 from htc.replay import load_scenario, replay_scenario
-from htc.reporting import report_run
+from htc.reporting import report_run, write_result
 
 SCENARIOS = [
     "normal_single_nvme",
@@ -51,3 +53,18 @@ def test_replay_keeps_fault_quality_explicit(tmp_path: Path) -> None:
     samples = (run_dir / "samples.csv").read_text()
     assert "TIMEOUT" in samples
     assert "command timed out" in samples
+
+
+def test_privileged_read_is_persisted_in_run_metadata(tmp_path: Path) -> None:
+    timestamp = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    result = ExperimentResult(
+        config=ExperimentConfig(mode="passive", duration_s=0, privileged_read=True),
+        started_at=timestamp,
+        finished_at=timestamp,
+        samples=[],
+        metadata={"privileged_read": True},
+    )
+    run_dir = write_result(result, tmp_path)
+    metadata = json.loads((run_dir / "metadata.json").read_text())
+    assert metadata["privileged_read"] is True
+    assert metadata["config"]["privileged_read"] is True

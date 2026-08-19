@@ -36,6 +36,11 @@ def build_parser() -> argparse.ArgumentParser:
     discover.add_argument(
         "--json", action="store_true", help="emit normalized measurements as JSON"
     )
+    discover.add_argument(
+        "--privileged-read",
+        action="store_true",
+        help="opt in to sudo -n read-only SMART and IPMI collection",
+    )
 
     characterize = subparsers.add_parser(
         "characterize", help="run passive or bounded CPU characterization"
@@ -62,6 +67,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="required opt-in for active CPU stimulus; has no effect in passive mode",
     )
+    characterize.add_argument(
+        "--privileged-read",
+        action="store_true",
+        help="opt in to sudo -n read-only SMART and IPMI collection",
+    )
 
     replay = subparsers.add_parser("replay", help="run an explicitly synthetic scenario")
     replay.add_argument("scenario", help="scenario name or path to scenario.json")
@@ -72,12 +82,13 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _collectors() -> list[object]:
+def _collectors(*, privileged_read: bool = False) -> list[object]:
+    command_prefix = ("sudo", "-n") if privileged_read else ()
     return [
         SystemCollector(),
         HWMONCollector(),
-        IPMICollector(),
-        SmartCollector(),
+        IPMICollector(command_prefix=command_prefix),
+        SmartCollector(command_prefix=command_prefix),
         NetworkCollector(),
     ]
 
@@ -88,7 +99,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "discover":
         measurements = []
         timestamp = utc_now()
-        for collector in _collectors():
+        for collector in _collectors(privileged_read=args.privileged_read):
             measurements.extend(collector.collect(timestamp))
         if args.json:
             print(json.dumps([measurement.as_row() for measurement in measurements], indent=2))
@@ -113,10 +124,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             recovery_s=args.recovery,
             workers=args.workers if args.workers is not None else default_worker_count(),
             max_temperature_c=args.max_temperature,
+            privileged_read=args.privileged_read,
         )
         restore_signals = install_signal_handlers()
         try:
-            result = ExperimentEngine(_collectors(), config).run()
+            result = ExperimentEngine(
+                _collectors(privileged_read=args.privileged_read), config
+            ).run()
         finally:
             restore_signals()
         run_dir = write_result(result, args.results_dir)

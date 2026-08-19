@@ -26,6 +26,9 @@ Physical / Synthetic Sources
 - `adapters.py` contains shell-free command execution and filesystem seams.
 - `collectors/` reads hwmon/sysfs, `/proc`, IPMI, SMART/NVMe, and network
   counters without changing the system.
+- SMART and IPMI accept an immutable optional `sudo -n` argv prefix for
+  explicit privileged read-only access; discovery and all other collectors
+  remain unprivileged.
 - `experiment.py` provides absolute-time sampling, passive mode, CPU
   baseline/stimulus/recovery phases, generic thermal guardrails, and immediate
   workload stop before recovery or abort completion.

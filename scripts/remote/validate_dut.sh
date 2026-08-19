@@ -16,6 +16,7 @@ Options:
   --recovery SECONDS          CPU recovery duration (default: 6)
   --max-temperature CELSIUS   CPU thermal guardrail (default: 85)
   --workers COUNT             CPU worker count (default: automatic)
+  --privileged-read           Opt in to sudo -n SMART/IPMI reads only
   --no-archive                Do not create an upload package
   -h, --help                  Show this help
 
@@ -44,6 +45,7 @@ workers=''
 cpu=false
 cpu_only_option=false
 no_archive=false
+privileged_read=false
 
 while (($# > 0)); do
     case "$1" in
@@ -90,6 +92,10 @@ while (($# > 0)); do
             workers=$2
             cpu_only_option=true
             shift 2
+            ;;
+        --privileged-read)
+            privileged_read=true
+            shift
             ;;
         --no-archive)
             no_archive=true
@@ -184,6 +190,9 @@ if [[ "$cpu" == true ]]; then
 else
     printf 'Starting passive validation (30-second defaults unless overridden; no CPU stimulus).\n'
 fi
+if [[ "$privileged_read" == true ]]; then
+    printf 'Privileged READ-ONLY collectors enabled (SMART/IPMI only; no CPU privilege elevation).\n'
+fi
 
 helper_output=$(mktemp)
 trap 'rm -f -- "$helper_output"' EXIT
@@ -208,6 +217,9 @@ if [[ "$cpu" == true ]]; then
     if [[ -n "$workers" ]]; then
         helper_command+=(--workers "$workers")
     fi
+fi
+if [[ "$privileged_read" == true ]]; then
+    helper_command+=(--privileged-read)
 fi
 
 if ! "${helper_command[@]}" 2>&1 | tee "$helper_output"; then

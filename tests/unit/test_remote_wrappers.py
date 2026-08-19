@@ -80,8 +80,11 @@ def test_env_and_package_directories_are_ignored() -> None:
 def test_validate_wrapper_is_executable_and_requires_cpu_opt_in() -> None:
     script = REPO_ROOT / "scripts/remote/validate_dut.sh"
     assert script.stat().st_mode & 0o111
-    assert "Starting passive validation" in script.read_text(encoding="utf-8")
-    assert "--enable-stimulus" in script.read_text(encoding="utf-8")
+    contents = script.read_text(encoding="utf-8")
+    assert "Starting passive validation" in contents
+    assert "--enable-stimulus" in contents
+    assert "privileged_read=false" in contents
+    assert "helper_command+=(--privileged-read)" in contents
 
     result = subprocess.run(
         [str(script), "--baseline", "1"],

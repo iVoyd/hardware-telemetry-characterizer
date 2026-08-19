@@ -237,6 +237,7 @@ def characterize_command(
     recovery: float,
     max_temperature: float,
     workers: int | None,
+    privileged_read: bool = False,
 ) -> list[str]:
     """Build unambiguous remote CLI arguments for one experiment mode."""
 
@@ -252,6 +253,8 @@ def characterize_command(
         "--interval",
         str(interval),
     ]
+    if privileged_read:
+        command.append("--privileged-read")
     if mode == "passive":
         command.extend(["--duration", str(duration)])
     else:
@@ -285,6 +288,7 @@ def run(
     recovery: float,
     max_temperature: float,
     workers: int | None,
+    privileged_read: bool = False,
 ) -> Path:
     """Perform one explicit remote run and return the local ignored result path."""
 
@@ -307,6 +311,7 @@ def run(
             recovery=recovery,
             max_temperature=max_temperature,
             workers=workers,
+            privileged_read=privileged_read,
         )
         remote_script = (
             f"cd {shlex.quote(temp_result)} && exec env PYTHONPATH=src {shlex.join(characterize)}"
@@ -416,6 +421,11 @@ def main() -> int:
     parser.add_argument("--recovery", type=float, default=6.0)
     parser.add_argument("--max-temperature", type=float, default=85.0)
     parser.add_argument("--workers", type=int)
+    parser.add_argument(
+        "--privileged-read",
+        action="store_true",
+        help="pass explicit sudo -n read-only SMART/IPMI access to HTC",
+    )
     args = parser.parse_args()
     if args.check_python_version is not None:
         try:
@@ -439,6 +449,7 @@ def main() -> int:
             recovery=args.recovery,
             max_temperature=args.max_temperature,
             workers=args.workers,
+            privileged_read=args.privileged_read,
         )
     )
     return 0

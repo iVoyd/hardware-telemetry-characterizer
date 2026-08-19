@@ -33,7 +33,9 @@ reviewable without physical evidence.
 Fault tests assert that failures become explicit quality states rather than
 being swallowed. The identity regression gives three generic `nvme` hwmon
 instances different values and verifies that all three survive normalization
-and reporting independently.
+and reporting independently. Privileged-read tests verify exact shell-free
+`sudo -n smartctl` and `sudo -n ipmitool` argv, while default tests verify that
+no sudo prefix is used.
 
 ## Optional physical validation
 

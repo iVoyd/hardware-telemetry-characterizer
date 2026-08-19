@@ -29,6 +29,30 @@ _FIELDS: tuple[tuple[str, str, str], ...] = (
 )
 
 
+def _permission_denial(stderr: str) -> bool:
+    lowered = stderr.lower()
+    return any(
+        phrase in lowered
+        for phrase in ("permission denied", "operation not permitted", "access denied")
+    )
+
+
+def _sudo_denial(stderr: str) -> bool:
+    lowered = stderr.lower()
+    return "sudo" in lowered and any(
+        phrase in lowered
+        for phrase in (
+            "password",
+            "not allowed",
+            "permission denied",
+            "not permitted",
+            "not found",
+            "no tty",
+            "askpass",
+        )
+    )
+
+
 def parse_smart_numeric(raw: str) -> int | float:
     """Parse one leading numeric SMART value without accepting malformed text."""
 
@@ -52,14 +76,21 @@ class SmartCollector:
 
     name = "smart"
 
-    def __init__(self, runner: CommandRunner | None = None, timeout_s: float = 10.0):
+    def __init__(
+        self,
+        runner: CommandRunner | None = None,
+        timeout_s: float = 10.0,
+        *,
+        command_prefix: tuple[str, ...] = (),
+    ):
         self.runner = runner or SubprocessRunner()
         self.timeout_s = timeout_s
+        self.command_prefix = tuple(command_prefix)
 
     def collect(self, timestamp: datetime | None = None) -> list[Measurement]:
         timestamp = timestamp or utc_now()
         try:
-            scan = self.runner.run(("smartctl", "--scan-open"), timeout_s=self.timeout_s)
+            scan = self.runner.run(("smartctl", "--scan"), timeout_s=self.timeout_s)
         except CommandUnavailable as exc:
             return [collector_status(self.name, timestamp, Quality.UNAVAILABLE, str(exc))]
         except CommandTimeout as exc:
@@ -90,7 +121,8 @@ class SmartCollector:
     def _collect_device(self, device: str, timestamp: datetime) -> list[Measurement]:
         try:
             result = self.runner.run(
-                ("smartctl", "-a", "-d", "nvme", device), timeout_s=self.timeout_s
+                (*self.command_prefix, "smartctl", "-a", "-d", "nvme", device),
+                timeout_s=self.timeout_s,
             )
         except CommandUnavailable as exc:
             return [
@@ -104,6 +136,16 @@ class SmartCollector:
             ]
         device_id = PurePosixPath(device).name
         output = result.stdout
+        permission_reason: str | None = None
+        if result.returncode and (
+            _permission_denial(result.stderr)
+            or (self.command_prefix and (result.returncode == 127 or _sudo_denial(result.stderr)))
+        ):
+            permission_reason = (
+                "insufficient permission to read NVMe SMART data"
+                if not self.command_prefix
+                else "privileged SMART read unavailable"
+            )
         measurements: list[Measurement] = []
         health_match = re.search(
             r"SMART overall-health self-assessment test result:\s*(.+)", output, re.IGNORECASE
@@ -174,8 +216,12 @@ class SmartCollector:
                 collector_status(
                     self.name,
                     timestamp,
-                    Quality.COMMAND_ERROR if result.returncode else Quality.PARSE_ERROR,
-                    result.stderr.strip() or "no recognized NVMe SMART fields",
+                    Quality.UNAVAILABLE
+                    if permission_reason
+                    else Quality.COMMAND_ERROR
+                    if result.returncode
+                    else Quality.PARSE_ERROR,
+                    permission_reason or result.stderr.strip() or "no recognized NVMe SMART fields",
                     channel=device,
                 )
             ]

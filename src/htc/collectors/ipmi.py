@@ -5,11 +5,19 @@ from __future__ import annotations
 import re
 from datetime import datetime
 
-from ..adapters import CommandRunner, CommandTimeout, CommandUnavailable, SubprocessRunner
+from ..adapters import (
+    CommandRunner,
+    CommandTimeout,
+    CommandUnavailable,
+    Filesystem,
+    PathFilesystem,
+    SubprocessRunner,
+)
 from ..measurement import Measurement, Quality, utc_now
 from .base import collector_status
 
 _NUMBER = re.compile(r"[-+]?\d+(?:\.\d+)?")
+_LOCAL_IPMI_DEVICES = ("/dev/ipmi0", "/dev/ipmi/0", "/dev/ipmidev/0")
 
 
 def _ipmi_unit(raw: str) -> str:
@@ -28,16 +36,34 @@ class IPMICollector:
 
     name = "ipmi"
 
-    def __init__(self, runner: CommandRunner | None = None, timeout_s: float = 5.0):
+    def __init__(
+        self,
+        runner: CommandRunner | None = None,
+        timeout_s: float = 5.0,
+        *,
+        filesystem: Filesystem | None = None,
+        command_prefix: tuple[str, ...] = (),
+    ):
         self.runner = runner or SubprocessRunner()
         self.timeout_s = timeout_s
+        self.filesystem = filesystem or PathFilesystem()
+        self.command_prefix = tuple(command_prefix)
 
     def collect(self, timestamp: datetime | None = None) -> list[Measurement]:
         timestamp = timestamp or utc_now()
         try:
-            result = self.runner.run(("ipmitool", "sensor"), timeout_s=self.timeout_s)
+            result = self.runner.run(
+                (*self.command_prefix, "ipmitool", "sensor"), timeout_s=self.timeout_s
+            )
         except CommandUnavailable as exc:
-            return [collector_status(self.name, timestamp, Quality.UNAVAILABLE, str(exc))]
+            return [
+                collector_status(
+                    self.name,
+                    timestamp,
+                    Quality.UNAVAILABLE,
+                    self._access_failure_reason(str(exc)),
+                )
+            ]
         except CommandTimeout as exc:
             return [collector_status(self.name, timestamp, Quality.TIMEOUT, str(exc))]
         if result.returncode != 0 and not result.stdout.strip():
@@ -45,8 +71,8 @@ class IPMICollector:
                 collector_status(
                     self.name,
                     timestamp,
-                    Quality.COMMAND_ERROR,
-                    result.stderr.strip() or f"ipmitool exited with {result.returncode}",
+                    Quality.UNAVAILABLE,
+                    self._access_failure_reason(result.stderr),
                 )
             ]
 
@@ -109,3 +135,15 @@ class IPMICollector:
                 )
             )
         return measurements
+
+    def _interface_present(self) -> bool:
+        return any(self.filesystem.exists(path) for path in _LOCAL_IPMI_DEVICES)
+
+    def _access_failure_reason(self, detail: str) -> str:
+        if detail and "command not found" in detail.lower():
+            return detail
+        if self.command_prefix:
+            return "privileged IPMI read unavailable"
+        if self._interface_present():
+            return "insufficient permission to access local IPMI interface"
+        return "local IPMI interface is not present"
