@@ -30,8 +30,9 @@ Physical / Synthetic Sources
   explicit privileged read-only access; discovery and all other collectors
   remain unprivileged.
 - `experiment.py` provides absolute-time sampling, passive mode, CPU
-  baseline/stimulus/recovery phases, generic thermal guardrails, and immediate
-  workload stop before recovery or abort completion.
+  baseline/stimulus/recovery phases, generic thermal guardrails, and workload
+  stop before every recovery phase. Shutdown failures are recorded and block
+  recovery until cleanup succeeds; outer cleanup remains best-effort.
 - `statistics.py` calculates small, reproducible channel and timing summaries.
 - `reporting.py` writes the four run artifacts and a human-readable report.
 - `replay.py` turns explicitly synthetic scenario JSON into the same artifact

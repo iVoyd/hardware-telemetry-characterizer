@@ -25,9 +25,10 @@ DUT captures, credentials, customer data, or employer-specific procedures.
 - Deterministic scheduled sampling with actual cadence statistics.
 - Passive observation and explicit-opt-in, bounded CPU baseline/stimulus/recovery
   characterization.
-- CPU baseline/stimulus thermal guardrails that stop active workload before
-  recovery, with guaranteed workload cleanup on normal, interrupted, failed,
-  and aborted paths.
+- CPU baseline/stimulus/recovery phase ordering that stops active workload
+  before recovery, with guaranteed cleanup attempts on normal, interrupted,
+  failed, and aborted paths. A shutdown failure records a workload-control
+  error and prevents recovery collection while shutdown is uncertain.
 - CSV, JSON, and text evidence artifacts for each run.
 - Synthetic replay scenarios for normal operation, missing tools, malformed or
   timed-out commands, stale/missing sensors, identity collisions, thermal

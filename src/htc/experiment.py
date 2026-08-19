@@ -264,12 +264,14 @@ class ExperimentEngine:
         self.workload_factory = workload_factory or (lambda workers: CpuWorkload(workers))
         self._guardrail_triggered: str | None = None
         self._workload_error: str | None = None
+        self._workload_shutdown_complete = False
 
     def run(self) -> ExperimentResult:
         started_at = utc_now()
         samples: list[Sample] = []
         workload: WorkloadHandle | None = None
         interrupted = False
+        self._workload_shutdown_complete = False
         try:
             if self.config.mode == "passive":
                 samples.extend(self._phase("passive", self.config.duration_s, len(samples)))
@@ -280,29 +282,33 @@ class ExperimentEngine:
                         workload = self.workload_factory(self.config.workers)
                         workload.start()
                     except Exception as exc:  # Operational failure becomes evidence, not a crash.
-                        self._workload_error = str(exc)
+                        self._record_workload_error(str(exc))
                         if workload is not None:
-                            workload.stop()
-                            workload = None
+                            if self._stop_workload(workload):
+                                workload = None
                 if workload and not self._workload_error:
-                    samples.extend(
-                        self._phase(
-                            "stimulus",
-                            self.config.stimulus_s,
-                            len(samples),
-                            stop_requested=lambda: self._workload_stopped(workload),
+                    try:
+                        samples.extend(
+                            self._phase(
+                                "stimulus",
+                                self.config.stimulus_s,
+                                len(samples),
+                                stop_requested=lambda: self._workload_stopped(workload),
+                            )
                         )
-                    )
-                samples.extend(self._phase("recovery", self.config.recovery_s, len(samples)))
+                    finally:
+                        self._stop_workload(workload)
+                if workload is None or self._workload_shutdown_complete:
+                    samples.extend(self._phase("recovery", self.config.recovery_s, len(samples)))
         except (KeyboardInterrupt, ExperimentInterrupted):
             interrupted = True
         finally:
             if workload is not None:
                 workload_failed = workload.failed
                 workload_reason = workload.failure_reason
-                workload.stop()
+                self._stop_workload(workload)
                 if workload_failed and not self._workload_error:
-                    self._workload_error = workload_reason or "workload process failed"
+                    self._record_workload_error(workload_reason or "workload process failed")
         return ExperimentResult(
             config=self.config,
             started_at=started_at,
@@ -360,13 +366,30 @@ class ExperimentEngine:
 
     def _workload_stopped(self, workload: WorkloadHandle) -> bool:
         if workload.failed:
-            self._workload_error = workload.failure_reason or "workload process failed"
-            workload.stop()
+            self._record_workload_error(workload.failure_reason or "workload process failed")
+            self._stop_workload(workload)
             return True
         if self._guardrail_stop():
-            workload.stop()
+            self._stop_workload(workload)
             return True
         return False
+
+    def _record_workload_error(self, error: str) -> None:
+        if self._workload_error is None:
+            self._workload_error = error
+        elif error not in self._workload_error:
+            self._workload_error = f"{self._workload_error}; {error}"
+
+    def _stop_workload(self, workload: WorkloadHandle) -> bool:
+        if self._workload_shutdown_complete:
+            return True
+        try:
+            workload.stop()
+        except Exception as exc:  # Best-effort cleanup is retried by the outer finally.
+            self._record_workload_error(f"workload stop failed: {exc}")
+            return False
+        self._workload_shutdown_complete = True
+        return True
 
     def _thermal_guard_reason(self, measurements: Iterable[Measurement]) -> str | None:
         limit = self.config.max_temperature_c

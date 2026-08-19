@@ -78,6 +78,16 @@ class FakeWorkload:
         return "synthetic worker exited" if self.failed else None
 
 
+class StopFailingWorkload(FakeWorkload):
+    def __init__(self) -> None:
+        super().__init__()
+        self.stop_attempts = 0
+
+    def stop(self) -> None:
+        self.stop_attempts += 1
+        raise RuntimeError("synthetic shutdown failure")
+
+
 def sampler(clock: FakeClock) -> ScheduledSampler:
     return ScheduledSampler(
         1.0, monotonic=clock.monotonic, sleeper=clock.sleep, wall_clock=clock.wall
@@ -120,6 +130,7 @@ def test_thermal_guard_stops_stimulus_and_always_stops_workload() -> None:
     ).run()
     assert result.guardrail_triggered is not None
     assert workload.started and workload.stopped
+    assert workload.stop_count == 1
     assert [sample.phase for sample in result.samples] == ["baseline", "stimulus", "recovery"]
     assert sum(sample.phase == "stimulus" for sample in result.samples) == 1
     assert recovery_observed_stopped == [True]
@@ -168,6 +179,58 @@ def test_worker_failure_stops_before_first_recovery_sample() -> None:
     ).run()
     assert result.workload_error == "synthetic worker exited"
     assert recovery_observed_stopped == [True]
+    assert workload.stop_count == 1
+
+
+def test_normal_stimulus_completion_stops_before_first_recovery_sample() -> None:
+    clock = FakeClock()
+    workload = FakeWorkload()
+    collector = TemperatureCollector([40.0] * 6)
+    recovery_observed_stopped: list[bool] = []
+    collector.on_collect = lambda index: (
+        recovery_observed_stopped.append(workload.stopped) if index >= 3 else None
+    )
+    config = ExperimentConfig(
+        mode="cpu",
+        interval_s=1.0,
+        baseline_s=0,
+        stimulus_s=1.0,
+        recovery_s=1.0,
+        max_temperature_c=85.0,
+    )
+    result = ExperimentEngine(
+        [collector],
+        config,
+        sampler=sampler(clock),
+        workload_factory=lambda _workers: workload,
+    ).run()
+    phases = [sample.phase for sample in result.samples]
+    assert workload.started
+    assert workload.stopped
+    assert workload.stop_count == 1
+    assert recovery_observed_stopped[0] is True
+    assert result.workload_error is None
+    assert phases[:3] == ["baseline", "stimulus", "stimulus"]
+    assert phases[3:] == ["recovery", "recovery"]
+
+
+def test_workload_stop_failure_blocks_recovery_and_retries_cleanup() -> None:
+    clock = FakeClock()
+    workload = StopFailingWorkload()
+    config = ExperimentConfig(
+        mode="cpu", interval_s=1.0, baseline_s=0, stimulus_s=1.0, recovery_s=1.0
+    )
+    result = ExperimentEngine(
+        [TemperatureCollector([40.0] * 4)],
+        config,
+        sampler=sampler(clock),
+        workload_factory=lambda _workers: workload,
+    ).run()
+    assert workload.started
+    assert workload.stop_attempts == 2
+    assert result.workload_error == "workload stop failed: synthetic shutdown failure"
+    assert [sample.phase for sample in result.samples] == ["baseline", "stimulus", "stimulus"]
+    assert workload.stopped is False
 
 
 class StimulusRaisingSampler(ScheduledSampler):
@@ -207,6 +270,7 @@ def test_interrupt_path_stops_workload() -> None:
     ).run()
     assert result.interrupted is True
     assert workload.started and workload.stopped
+    assert workload.stop_count == 1
 
 
 def test_exception_path_stops_workload() -> None:
@@ -221,6 +285,7 @@ def test_exception_path_stops_workload() -> None:
             workload_factory=lambda _workers: workload,
         ).run()
     assert workload.started and workload.stopped
+    assert workload.stop_count == 1
 
 
 def test_passive_high_temperature_is_not_an_active_guard_event() -> None:
