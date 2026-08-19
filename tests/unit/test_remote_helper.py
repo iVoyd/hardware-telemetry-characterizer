@@ -245,8 +245,8 @@ def test_remote_characterize_arguments_are_mode_specific() -> None:
     assert all(option in cpu for option in ("--baseline", "--stimulus-duration", "--recovery"))
     assert "--max-temperature" in cpu
     assert "--workers" in cpu
-    assert "--enable-stimulus" in cpu
-    assert "--privileged-read" not in passive
+    assert cpu.count("--enable-stimulus") == 1
+    assert passive.count("--enable-stimulus") == 0
 
     privileged = helper.characterize_command(
         mode="passive",
@@ -260,4 +260,18 @@ def test_remote_characterize_arguments_are_mode_specific() -> None:
         privileged_read=True,
     )
     assert "--privileged-read" in privileged
-    assert "--enable-stimulus" not in privileged
+    assert privileged.count("--enable-stimulus") == 0
+
+    cpu_privileged = helper.characterize_command(
+        mode="cpu",
+        duration=30,
+        interval=2,
+        baseline=6,
+        stimulus_duration=10,
+        recovery=6,
+        max_temperature=85,
+        workers=2,
+        privileged_read=True,
+    )
+    assert "--privileged-read" in cpu_privileged
+    assert cpu_privileged.count("--enable-stimulus") == 1

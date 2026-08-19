@@ -212,7 +212,6 @@ if [[ "$cpu" == true ]]; then
         --stimulus-duration "$stimulus_duration"
         --recovery "$recovery"
         --max-temperature "$max_temperature"
-        --enable-stimulus
     )
     if [[ -n "$workers" ]]; then
         helper_command+=(--workers "$workers")

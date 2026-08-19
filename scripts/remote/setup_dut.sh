@@ -141,10 +141,21 @@ else
 fi
 if command -v smartctl >/dev/null 2>&1; then
     printf "smartctl: available\n"
-    if smartctl --scan >/dev/null 2>&1; then
-        printf "SMART unprivileged access: available\n"
+    smart_device=$(smartctl --scan 2>/dev/null | while read -r candidate rest; do
+        case "$candidate" in
+            /dev/nvme[0-9]*) printf "%s\n" "$candidate"; break ;;
+        esac
+    done)
+    if test -n "$smart_device"; then
+        printf "SMART discovery: available\n"
+        if smartctl -a -d nvme "$smart_device" >/dev/null 2>&1; then
+            printf "SMART unprivileged read: available\n"
+        else
+            printf "SMART unprivileged read: restricted\n"
+        fi
     else
-        printf "SMART unprivileged access: restricted\n"
+        printf "SMART discovery: unavailable\n"
+        printf "SMART unprivileged read: unavailable\n"
     fi
     if sudo -n smartctl --scan-open >/dev/null 2>&1; then
         printf "SMART sudo-n read access: available\n"
