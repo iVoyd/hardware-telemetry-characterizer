@@ -1,100 +1,32 @@
 # Hardware Telemetry Characterizer
 
-Hardware Telemetry Characterizer (`htc`) is a Python CLI for Linux hardware
-telemetry and controlled characterization experiments. It collects observations
-through standard Linux interfaces, normalizes them into typed measurements, and
-produces artifacts that make a baseline, stimulus, and recovery run reviewable.
+A Python CLI that collects Linux hardware telemetry (temperatures, fans, CPU,
+NVMe SMART, IPMI sensors, network counters) and runs controlled
+baseline → stimulus → recovery experiments, with every reading tagged by
+whether it can be trusted.
 
-Monitoring asks what the sensors read. Characterization asks how a system
-responds to a controlled condition, whether that response is repeatable, and
-what evidence supports the conclusion. HTC is built for the second question;
-it is not a monitoring dashboard.
+## Why I built this
+
+At work I test server hardware, and a lot of that job comes down to reading
+sensors and deciding whether a number actually means something. A temperature
+that stopped updating, a tool that isn't installed, or two drives reporting
+under the same name can all look like a clean reading. I built HTC on my own
+time to work through that problem in the open: every measurement records where
+it came from and whether it's good, and every run leaves evidence someone else
+can review.
 
 ## What it does
 
-- Collects hwmon/sysfs temperatures and hardware channels, CPU and system
-  counters, IPMI sensors, NVMe SMART data, and network interface counters.
-- Preserves source, device identity, engineering units, timestamps, values, and
-  acquisition quality in one measurement model.
-- Samples against an absolute schedule and reports actual cadence and timing
-  statistics.
-- Runs passive observations or a bounded CPU baseline/stimulus/recovery
-  experiment.
-- Records unavailable tools, timeouts, stale data, command failures, and parse
-  failures instead of silently dropping them.
-- Supports synthetic replay and fault injection without hardware or root.
-
-## Platform and dependencies
-
-HTC runs on Linux with Python `>=3.10`. Core system telemetry uses standard
-`/proc` and `/sys` interfaces, including `/proc/stat`, load averages, memory
-information, cpufreq when exposed, and the logical CPU count. hwmon/sysfs
-temperatures and other channels are available when the running kernel and
-platform expose them. Network counters come from Linux sysfs interfaces.
-
-SMART/NVMe collection uses `smartctl` when installed, and local IPMI sensor
-collection uses `ipmitool` when installed. The optional `--privileged-read`
-flag applies `sudo -n` only to those SMART and IPMI reads; HTC itself and the
-CPU workload remain unprivileged. The remote workflow uses SSH and prefers
-rsync, with an scp/archive fallback.
-
-The collectors are capability-based rather than tied to a server vendor or
-model. If a tool or interface is unavailable, HTC records the acquisition
-state—often as `UNAVAILABLE`—and continues collecting other channels. That
-condition is not automatically treated as a DUT failure.
-
-## Architecture
-
-Collectors normalize Linux interfaces into measurements. The experiment engine
-schedules collection, controls phase transitions, applies generic safety
-guardrails, and delegates statistics and reporting. See
-[`docs/architecture.md`](docs/architecture.md) and
-[`docs/measurement-model.md`](docs/measurement-model.md).
-
-## CPU characterization
-
-CPU mode collects a baseline, starts a bounded worker set, observes the
-stimulus, stops every worker, and then collects recovery. The default workload
-uses roughly 25% of logical CPUs and performs no disk or network I/O or
-persistent configuration changes. `--enable-stimulus` is required, and the
-remote wrapper also requires an operator to type `CPU` at its confirmation
-prompt.
-
-Thermal guards are safety controls for an active experiment, not DUT
-qualification or production acceptance limits. A baseline guard prevents the
-workload from starting. A stimulus guard or worker failure stops the workload
-before recovery; interruptions and exceptions still clean up. If shutdown is
-uncertain, recovery collection is withheld.
-
-`cpu_utilization` is derived from an interval between `/proc/stat` samples. If
-that interval crosses a phase boundary, HTC retains the raw GOOD measurement,
-marks its metadata, and excludes it from phase-specific statistics. Instantaneous
-first-frame measurements are not excluded.
-
-## Collectors and quality
-
-The hwmon collector resolves sysfs paths to controller identities such as
-`nvme0` and `nvme1` when possible, with an instance-based fallback when path
-resolution is unavailable. This keeps multiple controllers with the same
-generic driver name independent. IPMI and SMART parsers retain acquisition
-quality separately from any interpretation of DUT health.
-
-Quality states include `GOOD`, `MISSING`, `STALE`, `TIMEOUT`, `PARSE_ERROR`,
-`COMMAND_ERROR`, and `UNAVAILABLE`.
-
-## Run artifacts
-
-Each run creates a timestamped directory containing:
-
-```text
-metadata.json   configuration and run metadata
-samples.csv     every normalized observation, including non-GOOD quality
-summary.json    sample frames, timing, channel statistics, and phase deltas
-report.txt      human-readable summary
-```
-
-Raw physical results belong under ignored `hardware-results/`. Committed
-examples and replay scenarios are synthetic.
+- Reads hwmon/sysfs channels, `/proc` CPU and system counters, NVMe SMART
+  (`smartctl`), IPMI sensors (`ipmitool`), and network interface counters.
+- Tags every observation with a quality state: `GOOD`, `MISSING`, `STALE`,
+  `TIMEOUT`, `PARSE_ERROR`, `COMMAND_ERROR`, or `UNAVAILABLE`. A missing tool or
+  a hung command is recorded, not silently dropped.
+- Samples on a fixed schedule and reports the timing it actually achieved.
+- Runs a passive observation, or a bounded CPU experiment: baseline, then load
+  on ~25% of cores, then recovery, with thermal guardrails that stop the load
+  early.
+- Replays synthetic scenarios, including fault cases, with no hardware or root.
 
 ## Quick start
 
@@ -102,78 +34,102 @@ examples and replay scenarios are synthetic.
 python -m venv .venv
 .venv/bin/python -m pip install -e '.[dev]'
 
-# One snapshot from the capabilities available on this Linux system.
-.venv/bin/htc discover
-
-# Optional read-only SMART/IPMI access through non-interactive sudo -n.
-.venv/bin/htc discover --privileged-read
-
-# Passive observation; output goes below ignored results/.
+.venv/bin/htc discover                                   # one snapshot of what this machine exposes
 .venv/bin/htc characterize --mode passive --duration 10 --interval 2
+.venv/bin/htc replay tests/fixtures/scenarios/normal_three_nvme   # no hardware needed
 
-# Synthetic operation with no hardware or root access.
-.venv/bin/htc replay tests/fixtures/scenarios/normal_three_nvme
-.venv/bin/htc report results/<run-directory>
-```
-
-For a bounded CPU run:
-
-```bash
+# CPU experiment (requires the explicit flag)
 .venv/bin/htc characterize --mode cpu --enable-stimulus \
   --baseline 6 --stimulus-duration 10 --recovery 6 --interval 2
 ```
 
-## Remote Linux workflow
+`--privileged-read` runs only the `smartctl` and `ipmitool` reads through
+`sudo -n`; HTC and its workload never run as root.
 
-Development, Git, and credentials remain on the local development machine. Set
-up the connection once, then use the wrappers around the same deployment helper:
+## Sample output
 
-```bash
-# One-time connection and read-only prerequisite check.
-./scripts/remote/setup_dut.sh
+Each run writes `metadata.json`, `samples.csv` (every observation, including
+non-GOOD ones), `summary.json`, and a `report.txt` like this one from the
+three-NVMe replay scenario:
 
-# Passive validation: 30 seconds at a 2-second interval.
-./scripts/remote/validate_dut.sh
+```text
+Mode: passive
+Samples: 2
+Guardrail: not triggered
 
-# Optional read-only SMART/IPMI access.
-./scripts/remote/validate_dut.sh --privileged-read
+Timing
+------
+Expected interval: 1.0 s
+Observed interval mean: 1.0 s
+Late samples: 0
 
-# Controlled CPU characterization with interactive confirmation.
-./scripts/remote/validate_dut.sh --cpu
+Channel statistics (GOOD numeric observations)
+-----------------------------------------------
+passive/nvme0/temp1 [°C]: n=2 min=40 max=40.5 mean=40.25 stdev=0.25
+passive/nvme1/temp1 [°C]: n=2 min=42 max=42.5 mean=42.25 stdev=0.25
+passive/nvme2/temp1 [°C]: n=2 min=44 max=44.5 mean=44.25 stdev=0.25
 ```
 
-The wrappers read connection settings from the local `.env`, use one SSH
-transport for SSH, rsync, and scp, deploy to a temporary remote directory, and
-retrieve results under ignored `hardware-results/`. Passive duration and CPU
-phase durations are separate options. `--privileged-read` never runs HTC or its
-workload under sudo. See the helpers and [`.env.example`](.env.example) for the
-available configuration names; do not commit real connection values.
+## What broke on real hardware
 
-## Development and validation
+The synthetic tests passed from the start. Running against a real Linux server
+over SSH is what found these:
+
+- **Drives overwriting each other.** All three NVMe drives exposed hwmon
+  entries with the same generic `nvme` name, so their temperatures collapsed
+  into one channel. HTC now resolves each entry to its controller (`nvme0`,
+  `nvme1`, …), and a regression scenario keeps it that way.
+- **Wrong load-average labels.** The 1-, 5-, and 15-minute load averages were
+  labeled `load_1m`, `load_2m`, `load_3m` by position. Fixed with explicit names.
+- **Recovery measured under load.** The CPU workload could still be running
+  when recovery sampling started, which contaminates the recovery data. Recovery
+  now waits until shutdown is confirmed and is skipped if it can't be.
+- **Utilization smeared across phases.** CPU utilization comes from the
+  difference between two `/proc/stat` reads. The first reading of a new phase
+  spans the previous phase too, so it's now flagged and kept out of that
+  phase's statistics while staying in the raw CSV.
+- **Remote run plumbing.** Creating the temporary directory on the target,
+  finding the result directory afterward, and running on the target's older
+  Python 3.10 all failed in different ways. Each one got a fix and a test.
+
+## Remote workflow
+
+Code, Git, and credentials stay on the development machine. The wrappers deploy
+to a temporary directory on the target over SSH, run, and pull the results back
+into the ignored `hardware-results/`:
+
+```bash
+./scripts/remote/setup_dut.sh            # one-time connection check
+./scripts/remote/validate_dut.sh         # 30 s passive run
+./scripts/remote/validate_dut.sh --cpu   # CPU experiment, asks you to type CPU to confirm
+```
+
+Connection settings live in a local `.env` (see `.env.example`).
+
+## Testing
 
 ```bash
 .venv/bin/python -m pytest -q
 .venv/bin/ruff check src scripts tests
-.venv/bin/ruff format --check src scripts tests
 ```
 
-CI runs the synthetic suite on Python 3.10, 3.11, and 3.12 without root,
-IPMI hardware, NVMe devices, a network DUT, or physical evidence. The testing
-strategy is documented in [`docs/validation.md`](docs/validation.md).
+CI runs the suite on Python 3.10–3.12 with no root, sensors, or drives. The
+replay scenarios cover missing tools, timeouts, malformed IPMI output, stale
+and disappearing sensors, a thermal guard trip, a crashed workload, and the
+NVMe naming regression. More detail is in [`docs/validation.md`](docs/validation.md),
+[`docs/architecture.md`](docs/architecture.md), and
+[`docs/measurement-model.md`](docs/measurement-model.md).
 
-## Limitations and data policy
+## Limitations
 
-HTC is not calibrated laboratory instrumentation and does not claim exhaustive
-vendor-specific parsing, hardware qualification, or universal repeatability.
-It performs no disk or network workload, power-state change, BMC configuration
-change, SMART self-test, destructive NVMe command, or threshold modification.
-Physical validation can reveal behavior and interface compatibility for the
-tested environment, but its results stay outside Git and do not establish
-qualification or production acceptance limits.
-
-Keep committed fixtures synthetic. Omit any real identifiers, credentials,
-inventory, or physical capture that is not safe to publish.
+- It's a characterization tool, not calibrated instrumentation or a
+  qualification test. Guardrails are safety stops, not pass/fail limits.
+- It never changes hardware state: no disk or network load, no BMC changes,
+  no SMART self-tests.
+- Parsing covers common `smartctl` and `ipmitool` output, not every vendor's
+  format.
+- All committed fixtures are synthetic; real captures stay out of the repo.
 
 ## License
 
-This project is available under the MIT License. See [`LICENSE`](LICENSE).
+MIT. See [`LICENSE`](LICENSE).
